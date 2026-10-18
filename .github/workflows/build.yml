@@ -29,6 +29,12 @@ jobs:
         run: |
           mkdir -p build && cd build
           qmake ../harbour_icq_nina.pro && make -j"$(nproc)"
+      - name: Compile the Sailfish-only app sources (stub sailfishapp.h)
+        run: tests/compile-app-sources.sh
+      - name: Lint QML
+        run: |
+          sudo apt-get install -y -q qtdeclarative5-dev-tools
+          find app/qml -name '*.qml' -print0 | xargs -0 -n1 /usr/lib/qt5/bin/qmllint
       - name: Fetch Open OSCAR Server ${{ env.OOS_VERSION }}
         run: |
           curl -sSL -o oos.tgz "https://github.com/mk6i/open-oscar-server/releases/download/v$OOS_VERSION/open_oscar_server.$OOS_VERSION.linux.x86_64.tar.gz"
