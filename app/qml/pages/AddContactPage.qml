@@ -2,36 +2,25 @@ import QtQuick 2.6
 import Sailfish.Silica 1.0
 import "../components"
 
-// Find people in the ICQ directory (by number, nickname, name or email) and
-// add them. For AIM accounts there is no directory: enter a screen name.
+// Find someone by ICQ number (the directory search NINA supports) and add
+// them, or add the number directly. For AIM accounts, enter a screen name.
 Page {
     id: page
     allowedOrientations: Orientation.All
 
-    // 0 number, 1 nickname, 2 name, 3 email
-    property int mode: 0
-    // The fields live in the list header; their text is mirrored here.
+    // The field lives in the list header; its text is mirrored here.
     property string queryText
-    property string lastNameText
     property string failureText
-    readonly property string digits: queryText.replace(/[^0-9]/g, "")
-    readonly property bool canSearch: account.state === 2 && (
-        mode === 0 ? digits.length >= 5 :
-        mode === 2 ? (queryText.trim().length > 0 || lastNameText.trim().length > 0) :
-        mode === 3 ? queryText.indexOf("@") > 0 : queryText.trim().length > 0)
     property bool searched: false
+    readonly property string digits: queryText.replace(/[^0-9]/g, "")
+    readonly property bool canSearch: account.state === 2 && (account.isIcq ? digits.length >= 5 : queryText.trim().length > 0)
 
     function search() {
         if (!canSearch)
             return
-        searched = true
-        if (!account.isIcq)
-            return
         failureText = ""
-        if (mode === 0) account.searchByUin(digits)
-        else if (mode === 1) account.searchByNickname(queryText)
-        else if (mode === 2) account.searchByName(queryText, lastNameText)
-        else account.searchByEmail(queryText)
+        searched = true
+        account.searchByUin(digits)
     }
 
     function add(uin, name, authRequired) {
@@ -56,62 +45,19 @@ Page {
 
             PageHeader { title: qsTr("Add contact") }
 
-            ComboBox {
-                visible: account.isIcq
-                label: qsTr("Find by")
-                currentIndex: page.mode
-                menu: ContextMenu {
-                    MenuItem { text: qsTr("ICQ number") }
-                    MenuItem { text: qsTr("Nickname") }
-                    MenuItem { text: qsTr("Name") }
-                    MenuItem { text: qsTr("Email") }
-                }
-                onCurrentIndexChanged: {
-                    page.mode = currentIndex
-                    page.searched = false
-                    account.clearSearch()
-                }
-            }
-
             TextField {
-                id: query
                 width: parent.width
                 focus: true
-                label: !account.isIcq ? qsTr("Screen name")
-                     : page.mode === 0 ? qsTr("ICQ number")
-                     : page.mode === 1 ? qsTr("Nickname")
-                     : page.mode === 2 ? qsTr("First name")
-                     : qsTr("Email address")
+                label: account.isIcq ? qsTr("ICQ number") : qsTr("Screen name")
                 placeholderText: label
-                inputMethodHints: page.mode === 0 && account.isIcq ? Qt.ImhDigitsOnly
-                                : page.mode === 3 ? Qt.ImhEmailCharactersOnly | Qt.ImhNoAutoUppercase
-                                : Qt.ImhNoPredictiveText
+                inputMethodHints: account.isIcq ? Qt.ImhDigitsOnly : Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase
                 onTextChanged: {
                     page.queryText = text
                     page.searched = false
                 }
                 EnterKey.enabled: page.canSearch
-                EnterKey.iconSource: "image://theme/icon-m-search"
-                EnterKey.onClicked: {
-                    if (page.mode === 2 && account.isIcq)
-                        lastName.forceActiveFocus()
-                    else if (account.isIcq)
-                        page.search()
-                    else
-                        page.add(page.queryText.trim(), "", false)
-                }
-            }
-
-            TextField {
-                id: lastName
-                visible: page.mode === 2 && account.isIcq
-                width: parent.width
-                label: qsTr("Last name")
-                placeholderText: label
-                onTextChanged: page.lastNameText = text
-                EnterKey.enabled: page.canSearch
-                EnterKey.iconSource: "image://theme/icon-m-search"
-                EnterKey.onClicked: page.search()
+                EnterKey.iconSource: account.isIcq ? "image://theme/icon-m-search" : "image://theme/icon-m-enter-next"
+                EnterKey.onClicked: account.isIcq ? page.search() : page.add(page.queryText.trim(), "", false)
             }
 
             Button {
@@ -138,10 +84,9 @@ Page {
                 font.pixelSize: Theme.fontSizeSmall
             }
 
-            // An ICQ number can be added without finding it first: some
-            // servers keep few people in their directory.
+            // A number can be added without finding it first.
             BackgroundItem {
-                visible: account.isIcq && page.mode === 0 && page.digits.length >= 5 && !account.searching
+                visible: account.isIcq && page.digits.length >= 5 && !account.searching
                 width: parent.width
                 height: Theme.itemSizeSmall
                 onClicked: page.add(page.digits, "", false)
@@ -159,8 +104,6 @@ Page {
                 visible: list.count > 0
                 text: qsTr("Found")
             }
-
-            Item { width: 1; height: Theme.paddingSmall }
         }
 
         delegate: ListItem {
@@ -199,11 +142,7 @@ Page {
                     color: item.highlighted ? Theme.secondaryHighlightColor : Theme.secondaryColor
                     text: {
                         var parts = [model.uin]
-                        var full = (model.firstName + " " + model.lastName).trim()
-                        if (full.length > 0 && full !== model.name)
-                            parts.push(full)
-                        if (model.age > 0)
-                            parts.push(qsTr("%1 years").arg(model.age))
+                        parts.push(model.online ? qsTr("online") : qsTr("offline"))
                         if (model.authRequired)
                             parts.push(qsTr("asks to approve"))
                         if (account.isContact(model.uin))
@@ -217,8 +156,7 @@ Page {
         ViewPlaceholder {
             enabled: account.isIcq && page.searched && !account.searching && list.count === 0
             text: qsTr("Nobody found")
-            hintText: page.mode === 0 ? qsTr("You can still add the number directly")
-                                      : qsTr("Not everyone is listed in the directory")
+            hintText: qsTr("You can still add the number directly")
         }
 
         VerticalScrollDecorator {}

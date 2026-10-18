@@ -29,8 +29,8 @@ receives messages (verified in CI with a test account).
 
 **Phase 2 (ICQ complete) – first version (0.2.0).**
 
-- add contacts: search the ICQ directory by number, nickname, name or email,
-  or add a number directly; choose a group; if they require authorization the
+- add contacts: look up an ICQ number in the directory, or add it
+  directly; choose a group; if they require authorization the
   request (with your message) is sent automatically
 - contact details from the directory; rename, move between groups, remove;
   manage groups (create, rename, delete empty ones)

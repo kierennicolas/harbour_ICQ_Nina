@@ -197,14 +197,12 @@ public:
     Q_INVOKABLE void setPrivacyMode(int mode);
     Q_INVOKABLE void setAuthorizationRequired(bool required);
 
-    // ICQ directory. Results arrive in searchResults; userInfoReceived
-    // carries a contact's details.
+    // ICQ directory (search by number; NINA does not answer the white pages
+    // searches). Results arrive in searchResults; userInfoReceived carries a
+    // contact's details.
     Q_INVOKABLE void requestUserInfo(const QString &uin);
     Q_INVOKABLE QVariantMap userInfo(const QString &uin) const { return m_userInfo.value(normalized(uin)); }
     Q_INVOKABLE bool searchByUin(const QString &uin);
-    Q_INVOKABLE bool searchByNickname(const QString &nickname);
-    Q_INVOKABLE bool searchByName(const QString &firstName, const QString &lastName);
-    Q_INVOKABLE bool searchByEmail(const QString &email);
     Q_INVOKABLE void clearSearch();
 
     // For TransferManager.

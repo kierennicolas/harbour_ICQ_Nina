@@ -1,6 +1,6 @@
 Name:       harbour-icqnina
 Summary:    ICQ and AIM messaging on the NINA service
-Version:    0.2.0
+Version:    0.2.1
 Release:    1
 Group:      Qt/Qt
 License:    GPLv3+ and GPLv2+
@@ -30,7 +30,7 @@ ICQ Nina is an ICQ-first instant messenger for Sailfish OS that connects to
 NINA (nina.chat), the revival service for the classic OSCAR protocol. Sign in
 with an ICQ number (or AIM screen name), see your server-side contact list
 and presence, and chat with notifications and history. Add and remove
-contacts, ask for and give authorization, search the ICQ directory, block
+contacts, ask for and give authorization, look up ICQ numbers, block
 people, and send and receive files (directly, through NINA's relay, or as a
 download link).
 Unofficial; not affiliated with NINA, ICQ or AOL.

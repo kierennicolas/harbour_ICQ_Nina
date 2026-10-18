@@ -231,7 +231,7 @@ Page {
                 : qsTr("Your contacts appear here once you are online")
             hintText: !account.hasAccount ? qsTr("Pull down to sign in with your ICQ number")
                 : account.lastError.length > 0 ? account.lastError
-                : account.state === 2 ? qsTr("Pull down to add someone by ICQ number, nickname or email")
+                : account.state === 2 ? qsTr("Pull down to add someone by ICQ number")
                 : qsTr("Pull down to go online")
         }
 

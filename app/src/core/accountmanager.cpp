@@ -1410,37 +1410,6 @@ bool AccountManager::searchByUin(const QString &rawUin)
     return true;
 }
 
-bool AccountManager::searchByNickname(const QString &nickname)
-{
-    if (nickname.trimmed().isEmpty() || !startSearch())
-        return false;
-    ICQWPSearchInfo info;
-    info.nickName = nickname.trimmed().toUtf8();
-    m_client->whitePagesSearch(info);
-    return true;
-}
-
-bool AccountManager::searchByName(const QString &firstName, const QString &lastName)
-{
-    if ((firstName.trimmed().isEmpty() && lastName.trimmed().isEmpty()) || !startSearch())
-        return false;
-    ICQWPSearchInfo info;
-    info.firstName = firstName.trimmed().toUtf8();
-    info.lastName = lastName.trimmed().toUtf8();
-    m_client->whitePagesSearch(info);
-    return true;
-}
-
-bool AccountManager::searchByEmail(const QString &email)
-{
-    if (!email.contains(QLatin1Char('@')) || !startSearch())
-        return false;
-    ICQWPSearchInfo info;
-    info.email = email.trimmed().toUtf8();
-    m_client->whitePagesSearch(info);
-    return true;
-}
-
 void AccountManager::onSearchResult(const ICQSearchResult &r)
 {
     if (!m_searching || r.uin == 0)
