@@ -2,6 +2,9 @@
 #include "accountmanager.h"
 
 #include <QDir>
+#include <QFile>
+#include <QUrl>
+#include <QFileInfo>
 #include <QNetworkConfigurationManager>
 #include <QQmlEngine>
 #include <QRegularExpression>
@@ -230,6 +233,11 @@ void AccountManager::loadSettings()
     m_statusMessage = s.value(QStringLiteral("statusMessage")).toString();
     m_stayAwake = s.value(QStringLiteral("stayAwake"), false).toBool();
     m_proxyTransfers = s.value(QStringLiteral("proxyTransfers"), true).toBool();
+    m_messageSound = s.value(QStringLiteral("messageSound"), 1).toInt();
+    m_customSoundFile = s.value(QStringLiteral("customSoundFile")).toString();
+    m_customSoundName = s.value(QStringLiteral("customSoundName")).toString();
+    if (m_messageSound == 2 && !QFileInfo::exists(m_customSoundFile))
+        m_messageSound = 1;
 }
 
 void AccountManager::saveSettings()
@@ -239,8 +247,14 @@ void AccountManager::saveSettings()
         s.clear();
         s.setValue(QStringLiteral("stayAwake"), m_stayAwake);
         s.setValue(QStringLiteral("proxyTransfers"), m_proxyTransfers);
+        s.setValue(QStringLiteral("messageSound"), m_messageSound);
+        s.setValue(QStringLiteral("customSoundFile"), m_customSoundFile);
+        s.setValue(QStringLiteral("customSoundName"), m_customSoundName);
         return;
     }
+    s.setValue(QStringLiteral("messageSound"), m_messageSound);
+    s.setValue(QStringLiteral("customSoundFile"), m_customSoundFile);
+    s.setValue(QStringLiteral("customSoundName"), m_customSoundName);
     s.setValue(QStringLiteral("stayAwake"), m_stayAwake);
     s.setValue(QStringLiteral("proxyTransfers"), m_proxyTransfers);
     s.setValue(QStringLiteral("uin"), m_uin);
@@ -1457,6 +1471,40 @@ QString AccountManager::fileProxyHost() const
     if (m_profile == QLatin1String("custom"))
         return m_host;
     return QString::fromLatin1(kNinaProxyHost);
+}
+
+void AccountManager::setMessageSound(int sound)
+{
+    if (sound < 0 || sound > 2 || sound == m_messageSound)
+        return;
+    if (sound == 2 && !QFileInfo::exists(m_customSoundFile))
+        return;
+    m_messageSound = sound;
+    saveSettings();
+    emit soundChanged();
+}
+
+bool AccountManager::setCustomSound(const QString &pathOrUrl)
+{
+    const QString path = pathOrUrl.startsWith(QLatin1String("file:")) ? QUrl(pathOrUrl).toLocalFile() : pathOrUrl;
+    const QFileInfo info(path);
+    if (path.isEmpty() || !info.isFile() || !info.isReadable() || info.size() > 5 * 1024 * 1024)
+        return false;
+    const QString dir = m_dataDir + QStringLiteral("/sounds");
+    QDir().mkpath(dir);
+    const QString suffix = info.suffix().isEmpty() ? QStringLiteral("wav") : info.suffix().toLower();
+    // A new name each time, so the notification service never plays a cached copy.
+    const QString target = QStringLiteral("%1/message-%2.%3").arg(dir).arg(QDateTime::currentMSecsSinceEpoch()).arg(suffix);
+    if (!QFile::copy(path, target))
+        return false;
+    if (!m_customSoundFile.isEmpty() && m_customSoundFile != target)
+        QFile::remove(m_customSoundFile);
+    m_customSoundFile = target;
+    m_customSoundName = info.fileName();
+    m_messageSound = 2;
+    saveSettings();
+    emit soundChanged();
+    return true;
 }
 
 void AccountManager::setProxyTransfers(bool proxy)

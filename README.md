@@ -46,6 +46,8 @@ receives messages (verified in CI with a test account).
   with any client and when they are offline); receive files (accept or decline,
   saved in Downloads, open from the chat); progress, cancel, "send as link
   instead" when a transfer fails
+- sound: the app's own new-message chime, the phone's message tone, or any
+  sound file you choose; Sailfish OS-style icon
 
 Verified in CI against a local Open OSCAR Server (contacts, groups,
 authorization, blocking, directory, offline messages, direct and proxied file

@@ -10,6 +10,16 @@ ApplicationWindow {
 
     // uin -> Notification shown for that conversation
     property var notifications: ({})
+    // The new-message sound: empty for the phone's instant message tone.
+    readonly property string messageSoundFile: account.messageSound === 1 ? Qt.resolvedUrl("../sounds/icq-nina-message.wav").toString()
+                                             : account.messageSound === 2 ? "file://" + account.customSoundFile
+                                             : ""
+
+    function playMessageSound() {
+        var n = testNotificationComponent.createObject(app)
+        n.publish()
+    }
+
     // Authorization requests not answered yet: [{uin, name, reason}]
     property var pendingAuthorizations: []
 
@@ -66,6 +76,7 @@ ApplicationWindow {
         Notification {
             property string uin
             category: "x-nemo.messaging.im"
+            sound: app.messageSoundFile
             appName: qsTr("ICQ Nina")
             appIcon: "/usr/share/icons/hicolor/86x86/apps/harbour-icqnina.png"
             itemCount: 0
@@ -78,6 +89,22 @@ ApplicationWindow {
                 "method": "openConversation",
                 "arguments": [ uin ]
             }]
+        }
+    }
+
+    Component {
+        id: testNotificationComponent
+        Notification {
+            category: "x-nemo.messaging.im"
+            appName: qsTr("ICQ Nina")
+            appIcon: "/usr/share/icons/hicolor/86x86/apps/harbour-icqnina.png"
+            summary: qsTr("ICQ Nina")
+            body: qsTr("This is how new messages sound")
+            previewSummary: summary
+            previewBody: body
+            isTransient: true
+            sound: app.messageSoundFile
+            onClosed: destroy()
         }
     }
 

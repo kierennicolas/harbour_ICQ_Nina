@@ -1,28 +1,42 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
   <defs>
-    <linearGradient id="bg" x1="0.15" y1="0.05" x2="0.85" y2="0.95">
-      <stop offset="0" stop-color="#2fd18a"/>
-      <stop offset="0.55" stop-color="#169e7c"/>
-      <stop offset="1" stop-color="#0c6a63"/>
+    <!-- Sailfish OS app icon silhouette: two sharp corners (top right,
+         bottom left) and two quarter-circle sweeps of half the icon size. -->
+    <clipPath id="shape">
+      <path d="M254 2 V128 A126 126 0 0 1 128 254 H2 V128 A126 126 0 0 1 128 2 Z"/>
+    </clipPath>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3fd98a"/>
+      <stop offset="0.5" stop-color="#17a877"/>
+      <stop offset="1" stop-color="#0a6e5c"/>
     </linearGradient>
-    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
-      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
-    </linearGradient>
+    <radialGradient id="glow" cx="0.28" cy="0.22" r="0.75">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.28"/>
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
+      <feOffset dy="4"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.30"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
   </defs>
-  <!-- rounded tile -->
-  <rect x="12" y="12" width="232" height="232" rx="58" fill="url(#bg)"/>
-  <rect x="12" y="12" width="232" height="232" rx="58" fill="url(#shine)"/>
-  <!-- speech bubble with a tail, like an old pager chat window -->
-  <path d="M70 62 H186 A28 28 0 0 1 214 90 V150 A28 28 0 0 1 186 178 H118 L82 206 L88 178 H70 A28 28 0 0 1 42 150 V90 A28 28 0 0 1 70 62 Z"
-        fill="#ffffff"/>
-  <!-- the number sign: everyone on ICQ is a number -->
-  <g stroke="#127f6b" stroke-width="13" stroke-linecap="round">
-    <line x1="114" y1="84" x2="104" y2="158"/>
-    <line x1="150" y1="84" x2="140" y2="158"/>
-    <line x1="88" y1="106" x2="170" y2="106"/>
-    <line x1="84" y1="136" x2="166" y2="136"/>
+  <g clip-path="url(#shape)">
+    <rect width="256" height="256" fill="url(#bg)"/>
+    <rect width="256" height="256" fill="url(#glow)"/>
   </g>
-  <!-- online dot -->
-  <circle cx="196" cy="70" r="26" fill="#ffb22e" stroke="#ffffff" stroke-width="8"/>
+  <g filter="url(#shadow)">
+    <!-- speech bubble -->
+    <path d="M86 66 H172 A30 30 0 0 1 202 96 V146 A30 30 0 0 1 172 176 H122 L86 204 L92 176 H86 A30 30 0 0 1 56 146 V96 A30 30 0 0 1 86 66 Z"
+          fill="#ffffff"/>
+    <!-- the number sign: on ICQ everyone is a number -->
+    <g stroke="#13916f" stroke-width="12" stroke-linecap="round">
+      <line x1="120" y1="88" x2="111" y2="156"/>
+      <line x1="153" y1="88" x2="144" y2="156"/>
+      <line x1="96" y1="109" x2="172" y2="109"/>
+      <line x1="92" y1="135" x2="168" y2="135"/>
+    </g>
+    <!-- online dot -->
+    <circle cx="198" cy="72" r="22" fill="#ff9b26" stroke="#ffffff" stroke-width="8"/>
+  </g>
 </svg>

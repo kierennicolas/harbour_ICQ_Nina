@@ -1,10 +1,27 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
+import Sailfish.Pickers 1.0
 
 Page {
     allowedOrientations: Orientation.All
 
     RemorsePopup { id: remorse }
+
+    Component {
+        id: soundPicker
+        FilePickerPage {
+            title: qsTr("Choose a sound")
+            nameFilters: [ "*.wav", "*.ogg", "*.oga", "*.opus", "*.mp3", "*.flac", "*.m4a" ]
+            onSelectedContentPropertiesChanged: {
+                if (selectedContentProperties && selectedContentProperties.filePath) {
+                    if (!account.setCustomSound(selectedContentProperties.filePath))
+                        soundError.text = qsTr("Cannot use that file (sounds up to 5 MB).")
+                    else
+                        soundError.text = ""
+                }
+            }
+        }
+    }
 
     SilicaFlickable {
         anchors.fill: parent
@@ -77,6 +94,64 @@ Page {
                     anchors.verticalCenter: parent.verticalCenter
                     color: parent.highlighted ? Theme.highlightColor : Theme.primaryColor
                     text: qsTr("Groups")
+                }
+            }
+
+            SectionHeader { text: qsTr("Sound") }
+
+            ComboBox {
+                label: qsTr("New message sound")
+                currentIndex: account.messageSound
+                menu: ContextMenu {
+                    MenuItem {
+                        text: qsTr("Phone's message tone")
+                        onClicked: account.messageSound = 0
+                    }
+                    MenuItem {
+                        text: qsTr("ICQ Nina")
+                        onClicked: account.messageSound = 1
+                    }
+                    MenuItem {
+                        text: account.customSoundName.length > 0 ? account.customSoundName : qsTr("Your own sound…")
+                        onClicked: {
+                            if (account.customSoundName.length > 0)
+                                account.messageSound = 2
+                            else
+                                pageStack.push(soundPicker)
+                        }
+                    }
+                }
+            }
+
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                wrapMode: Text.Wrap
+                color: Theme.secondaryHighlightColor
+                font.pixelSize: Theme.fontSizeExtraSmall
+                text: account.messageSound === 0
+                      ? qsTr("The instant message tone from Settings › Sounds and feedback.")
+                      : qsTr("Played with each message notification; silent and Do not disturb modes still apply.")
+            }
+
+            Label {
+                id: soundError
+                visible: text.length > 0
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                wrapMode: Text.Wrap
+                color: Theme.errorColor
+                font.pixelSize: Theme.fontSizeSmall
+            }
+
+            ButtonLayout {
+                Button {
+                    text: qsTr("Try it")
+                    onClicked: app.playMessageSound()
+                }
+                Button {
+                    text: qsTr("Choose a sound file")
+                    onClicked: pageStack.push(soundPicker)
                 }
             }
 

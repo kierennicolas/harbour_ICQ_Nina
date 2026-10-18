@@ -67,6 +67,11 @@ class AccountManager : public QObject
     // behind firewalls and on mobile data) instead of trying direct first.
     Q_PROPERTY(bool proxyTransfers READ proxyTransfers WRITE setProxyTransfers NOTIFY proxyTransfersChanged)
     Q_PROPERTY(QString fileProxyHost READ fileProxyHost NOTIFY accountChanged)
+    // New-message sound: 0 the phone's instant message tone, 1 the app's own
+    // sound, 2 a sound file you chose (copied to customSoundFile).
+    Q_PROPERTY(int messageSound READ messageSound WRITE setMessageSound NOTIFY soundChanged)
+    Q_PROPERTY(QString customSoundFile READ customSoundFile NOTIFY soundChanged)
+    Q_PROPERTY(QString customSoundName READ customSoundName NOTIFY soundChanged)
 
 public:
     enum State { Offline = 0, Connecting, Online };
@@ -134,6 +139,13 @@ public:
     SearchModel *searchResults() const { return m_search; }
     bool searching() const { return m_searching; }
     TransferManager *transfers() const { return m_transfers; }
+    int messageSound() const { return m_messageSound; }
+    void setMessageSound(int sound);
+    QString customSoundFile() const { return m_customSoundFile; }
+    QString customSoundName() const { return m_customSoundName; }
+    // Copies a sound file into the app's own folder (the notification
+    // service plays it from there) and selects it. Returns false if unreadable.
+    Q_INVOKABLE bool setCustomSound(const QString &pathOrUrl);
     bool proxyTransfers() const { return m_proxyTransfers; }
     void setProxyTransfers(bool proxy);
     QString fileProxyHost() const;
@@ -234,6 +246,7 @@ signals:
     void contactEditFailed(const QString &uin, const QString &message);
     void contactAddedYou(const QString &uin, const QString &name);
     void proxyTransfersChanged();
+    void soundChanged();
 
 private slots:
     void onLoggedIn();
@@ -333,6 +346,9 @@ private:
     QHash<QString, QString> m_authReasons;      // added, will ask for authorization
     TransferManager *m_transfers = nullptr;
     bool m_proxyTransfers = true;
+    int m_messageSound = 1;
+    QString m_customSoundFile;
+    QString m_customSoundName;
     QString m_proxyOverrideHost;
     int m_proxyOverridePort = 0;
 };

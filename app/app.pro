@@ -34,4 +34,9 @@ licenses.files = ../LICENSE ../liboscar/COPYING ../liboscar/COPYING.LIB
 licenses.path = /usr/share/$${TARGET}/licenses
 INSTALLS += licenses
 
+# The default new-message sound (original, synthesized for this app).
+sounds.files = sounds/icq-nina-message.wav
+sounds.path = /usr/share/$${TARGET}/sounds
+INSTALLS += sounds
+
 SAILFISHAPP_ICONS = 86x86 108x108 128x128 172x172
