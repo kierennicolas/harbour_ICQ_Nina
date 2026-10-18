@@ -19,6 +19,7 @@
 #include "client.h"
 #include "contactmanager.h"
 #include "oscarmessage.h"
+#include "oscarsettings.h"
 #include "oscartypes.h"
 #include "oscarutils.h"
 #include "userdetails.h"
@@ -177,6 +178,9 @@ int main(int argc, char **argv)
         {QStringLiteral("wait"), QStringLiteral("Seconds to stay signed on."), QStringLiteral("s"), QStringLiteral("15")},
         {QStringLiteral("redact"), QStringLiteral("Mask other users' ids and message texts in the output.")},
         {QStringLiteral("trace"), QStringLiteral("Show liboscar's protocol trace (structure only with --redact).")},
+        {QStringLiteral("strong-hash"), QStringLiteral("BUCP: send the strong MD5 password hash with TLV 0x4C.")},
+        {QStringLiteral("key-tlvs"), QStringLiteral("BUCP: add TLVs 0x4B and 0x5A to the key request.")},
+        {QStringLiteral("multiconn"), QStringLiteral("Send multi-session TLV 0x4A with this value (also for ICQ)."), QStringLiteral("n")},
     });
     p.process(app);
 
@@ -209,10 +213,17 @@ int main(int argc, char **argv)
     client.setIsIcq(isIcq);
     client.setVersion(&version);
     client.setCodecProvider(&codecs);
+    client.clientSettings()->setStrongPasswordHash(p.isSet(QStringLiteral("strong-hash")));
+    client.clientSettings()->setExtendedKeyRequest(p.isSet(QStringLiteral("key-tlvs")));
+    if (p.isSet(QStringLiteral("multiconn")))
+        client.clientSettings()->setMultiConnection(p.value(QStringLiteral("multiconn")).toInt());
 
-    out(QStringLiteral("CONFIG host=%1 port=%2 tls=%3 account=%4 icq=%5 identity=\"%6\" password_length=%7")
+    out(QStringLiteral("CONFIG host=%1 port=%2 tls=%3 account=%4 icq=%5 identity=\"%6\" password_length=%7 strong_hash=%8 key_tlvs=%9 multiconn=%10")
         .arg(host).arg(port).arg(tls ? "yes" : "no").arg(uin).arg(isIcq ? "yes" : "no")
-        .arg(version.clientString).arg(password.length()));
+        .arg(version.clientString).arg(password.length())
+        .arg(p.isSet(QStringLiteral("strong-hash")) ? "yes" : "no")
+        .arg(p.isSet(QStringLiteral("key-tlvs")) ? "yes" : "no")
+        .arg(p.isSet(QStringLiteral("multiconn")) ? p.value(QStringLiteral("multiconn")) : QStringLiteral("default")));
 
     QObject::connect(&client, &Client::loggedIn, [&]() {
         g_loggedIn = true;

@@ -22,7 +22,8 @@ namespace Oscar
 
 Settings::Settings()
 : m_webAware(false), m_requireAuth(false), m_hideIP(false),
-  m_fileProxy( false ), m_firstPort( 5190 ), m_lastPort( 5199 ), m_timeout( 10 )
+  m_fileProxy( false ), m_firstPort( 5190 ), m_lastPort( 5199 ), m_timeout( 10 ),
+  m_strongPasswordHash( false ), m_extendedKeyRequest( false ), m_multiConnection( -1 )
 {
 }
 
@@ -100,5 +101,34 @@ int Settings::timeout() const
 	return m_timeout;
 }
 
+void Settings::setStrongPasswordHash( bool strong )
+{
+	m_strongPasswordHash = strong;
 }
 
+bool Settings::strongPasswordHash() const
+{
+	return m_strongPasswordHash;
+}
+
+void Settings::setExtendedKeyRequest( bool extended )
+{
+	m_extendedKeyRequest = extended;
+}
+
+bool Settings::extendedKeyRequest() const
+{
+	return m_extendedKeyRequest;
+}
+
+void Settings::setMultiConnection( int flag )
+{
+	m_multiConnection = flag;
+}
+
+int Settings::multiConnection() const
+{
+	return m_multiConnection;
+}
+
+}

@@ -23,7 +23,9 @@
 #include <stdlib.h>
 #include <kdebug.h>
 #include <KLocalizedString>
+#include "client.h"
 #include "connection.h"
+#include "oscarsettings.h"
 #include "oscartypes.h"
 #include "oscarutils.h"
 #include "transfer.h"
@@ -141,6 +143,12 @@ void OscarLoginTask::sendAuthStringRequest()
 
 	Buffer* outbuf = new Buffer;
 	outbuf->addTLV(0x0001, client()->userId().toLatin1() );
+	if ( client()->settings()->extendedKeyRequest() )
+	{
+		// harbour_icq_nina: as libpurple does ("we support SecurID", unknown)
+		outbuf->addTLV(0x004B, QByteArray() );
+		outbuf->addTLV(0x005A, QByteArray() );
+	}
 
 	Transfer* st = createTransfer( f, s, outbuf );
 	send( st );
@@ -179,7 +187,16 @@ void OscarLoginTask::sendLoginRequest()
 	outbuf->addTLV(0x000f, version->lang.toLatin1() );
 	outbuf->addTLV(0x000e, version->country.toLatin1() );
 
-	if ( !client()->isIcq() )
+	if ( client()->settings()->strongPasswordHash() )
+		outbuf->addTLV(0x004C, QByteArray() ); // harbour_icq_nina: strong hash flag
+
+	const int multiConnection = client()->settings()->multiConnection();
+	if ( multiConnection >= 0 )
+	{
+		// harbour_icq_nina: configurable, also for ICQ
+		outbuf->addTLV8(0x004a, multiConnection );
+	}
+	else if ( !client()->isIcq() )
 	{
 		//if set, old-style buddy lists will not work... you will need to use SSI
 		outbuf->addTLV8(0x004a,0x01);
@@ -274,7 +291,15 @@ QByteArray OscarLoginTask::encodePassword() const
 	kDebug(OSCAR_RAW_DEBUG) ;
 	QCryptographicHash h(QCryptographicHash::Md5);
 	h.addData( m_authKey );
-	h.addData( client()->password().toLatin1() );
+	if ( client()->settings()->strongPasswordHash() )
+	{
+		// harbour_icq_nina: AIM 5.x/libpurple "strong" form
+		h.addData( QCryptographicHash::hash( client()->password().toLatin1(), QCryptographicHash::Md5 ) );
+	}
+	else
+	{
+		h.addData( client()->password().toLatin1() );
+	}
 	h.addData( AIM_MD5_STRING, strlen( AIM_MD5_STRING ) );
 	return h.result();
 }

@@ -60,7 +60,26 @@ public:
 	/* timeout in seconds */
 	void setTimeout( int time );
 	int timeout() const;
-	
+
+	/* harbour_icq_nina: sign-on variants, for servers (such as revival
+	 * services) that only accept some of the historical forms. */
+
+	/* BUCP: send MD5(key + MD5(password) + AIM string) with TLV 0x4C, as
+	 * libpurple and AIM 5.x do, instead of MD5(key + password + AIM string). */
+	void setStrongPasswordHash( bool strong );
+	bool strongPasswordHash() const;
+
+	/* BUCP: add the empty TLVs 0x4B and 0x5A to the key request (17/06), as
+	 * libpurple does. */
+	void setExtendedKeyRequest( bool extended );
+	bool extendedKeyRequest() const;
+
+	/* Multiple-session flag (TLV 0x4A) in the login request: -1 sends it only
+	 * for AIM (Kopete's behaviour), otherwise the value to send for both AIM
+	 * and ICQ (0x01 = join other sessions, 0x03 = single session). */
+	void setMultiConnection( int flag );
+	int multiConnection() const;
+
 private:
 	
 	bool m_webAware;
@@ -70,6 +89,9 @@ private:
 	int  m_firstPort;
 	int  m_lastPort;
 	int  m_timeout;
+	bool m_strongPasswordHash;
+	bool m_extendedKeyRequest;
+	int  m_multiConnection;
 };
 
 }
