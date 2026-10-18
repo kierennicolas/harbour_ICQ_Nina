@@ -4,6 +4,7 @@
 #define CHATMODEL_H
 
 #include <QAbstractListModel>
+#include <QHash>
 #include <QVector>
 
 #include "historystore.h"
@@ -21,7 +22,15 @@ public:
         TimestampRole,
         DeliveredRole,
         DayRole,          // "yyyy-MM-dd", for section headers
-        IdRole
+        IdRole,
+        KindRole,         // StoredMessage::Kind
+        FileNameRole,
+        FileSizeRole,
+        FilePathRole,
+        FileUrlRole,
+        FileStateRole,    // TransferModel::State
+        FileDoneRole,     // bytes transferred so far
+        TransferIdRole
     };
 
     ChatModel(const QString &contact, HistoryStore *store, QObject *parent = nullptr);
@@ -35,6 +44,8 @@ public:
     // Adds a message (already stored) at the end.
     void append(const StoredMessage &m);
     void setDelivered(qint64 id);
+    void updateFile(qint64 id, int state, const QString &path, const QString &url);
+    void setFileDone(qint64 id, qint64 bytes);
     void reload();
 
 signals:
@@ -43,7 +54,10 @@ signals:
 private:
     QString m_contact;
     HistoryStore *m_store;
+    int rowOf(qint64 id) const;
+
     QVector<StoredMessage> m_messages;
+    QHash<qint64, qint64> m_fileDone;
 };
 
 #endif

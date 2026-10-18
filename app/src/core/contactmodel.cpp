@@ -129,6 +129,8 @@ void ContactModel::upsert(const Item &item)
         return;
     }
     Item &c = m_items[i];
+    if (c.alias == item.alias && c.group == item.group && c.awaitingAuth == item.awaitingAuth)
+        return;
     c.alias = item.alias;
     c.group = item.group;
     c.awaitingAuth = item.awaitingAuth;

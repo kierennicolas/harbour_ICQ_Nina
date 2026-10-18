@@ -447,7 +447,12 @@ bool ContactManager::newGroup( const OContact& group )
 
 bool ContactManager::updateGroup( const OContact& group )
 {
-	OContact oldGroup = findGroup( group.name() );
+	// harbour_icq_nina: a rename keeps the group id but not the name, so
+	// look the old entry up by id (Kopete looked by the new name and kept
+	// both).
+	OContact oldGroup = findGroup( group.gid() );
+	if ( !oldGroup.isValid() )
+		oldGroup = findGroup( group.name() );
 
 	if ( oldGroup.isValid() )
 	{
@@ -575,6 +580,7 @@ bool ContactManager::newItem( const OContact& item )
 	kDebug(OSCAR_RAW_DEBUG) << "Adding item " << item.toString();
 	addID( item );
 	d->contactList.append( item );
+	emit itemChanged(); // harbour_icq_nina
 	return true;
 }
 
@@ -597,6 +603,7 @@ bool ContactManager::updateItem( const OContact& item )
 	kDebug( OSCAR_RAW_DEBUG ) << "Updating item in SSI list";
 	addID( item );
 	d->contactList.append( item );
+	emit itemChanged(); // harbour_icq_nina
 	return true;
 }
 
@@ -611,6 +618,7 @@ bool ContactManager::removeItem( const OContact& item )
 		return false;
 	}
 
+	emit itemChanged(); // harbour_icq_nina
 	return true;
 }
 

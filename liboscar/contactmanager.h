@@ -141,6 +141,10 @@ Q_SIGNALS:
 	void groupRemoved( const QString& groupName );
 	
 	void modifyError( const QString& error );
+
+	//! harbour_icq_nina: a non-contact item (permit, deny, ignore, privacy
+	//! settings, ...) was added, changed or removed
+	void itemChanged();
 	
 private:
 	Oscar::WORD findFreeId( const QSet<Oscar::WORD>& idSet, Oscar::WORD fromId ) const;

@@ -23,6 +23,9 @@
 #include <qstring.h>
 
 #include "icqtask.h"
+
+#include <QSet>
+#include <QTimer>
 #include "icquserinfo.h"
 
 class Transfer;
@@ -56,6 +59,9 @@ public:
 	bool take( Transfer* transfer ) Q_DECL_OVERRIDE;
 	void onGo() Q_DECL_OVERRIDE;
 
+private Q_SLOTS:
+	void longInfoSettled(); // harbour_icq_nina
+
 Q_SIGNALS:
 	void receivedInfoFor( const QString& contact, unsigned int type );
 	
@@ -71,6 +77,10 @@ private:
 	QMap<Oscar::DWORD, QString> m_contactSequenceMap;
 	QMap<QString, Oscar::DWORD> m_reverseContactMap;
 	unsigned int m_type;
+	// harbour_icq_nina
+	QMap<Oscar::DWORD, unsigned int> m_typeForSequence;
+	QSet<Oscar::DWORD> m_pendingLong;
+	QTimer m_longTimer;
 	QString m_userToRequestFor;
 
 };

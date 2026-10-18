@@ -26,6 +26,17 @@ ICQUserInfoRequestTask::ICQUserInfoRequestTask( Task* parent ) : ICQTask( parent
 {
 	//by default, request short info. it saves bandwidth
 	m_type = Short;
+	m_longTimer.setSingleShot( true );
+	m_longTimer.setInterval( 1500 );
+	connect( &m_longTimer, SIGNAL(timeout()), this, SLOT(longInfoSettled()) );
+}
+
+void ICQUserInfoRequestTask::longInfoSettled()
+{
+	const QList<Oscar::DWORD> pending = m_pendingLong.values();
+	m_pendingLong.clear();
+	foreach ( Oscar::DWORD seq, pending )
+		emit receivedInfoFor( m_contactSequenceMap.value( seq ), Long );
 }
 
 ICQUserInfoRequestTask::~ICQUserInfoRequestTask()
@@ -93,6 +104,10 @@ bool ICQUserInfoRequestTask::take( Transfer* transfer )
 		
 		Oscar::DWORD seq = st->snacRequest();
 		QString contactId = m_contactSequenceMap[seq];
+		// harbour_icq_nina: the type of the request this reply answers (Kopete
+		// used the type of the latest request, so overlapping short and full
+		// requests were confused).
+		const unsigned int type = m_typeForSequence.value( seq, m_type );
 		
 		switch ( requestSubType() )
 		{
@@ -138,7 +153,8 @@ bool ICQUserInfoRequestTask::take( Transfer* transfer )
 			orgAffInfo.fill( buffer );
 			m_orgAffInfoMap[seq] = orgAffInfo;
 			//affliations seems to be the last info we get, so be hacky and only emit the signal once
-			emit receivedInfoFor( contactId, Long );
+			if ( m_pendingLong.remove( seq ) )
+				emit receivedInfoFor( contactId, Long );
 			break;
 		case 0x0104:
 			kDebug( OSCAR_RAW_DEBUG ) << "Received short user info";
@@ -153,8 +169,11 @@ bool ICQUserInfoRequestTask::take( Transfer* transfer )
 			break;
 		}
 
-		if ( m_type == Short )
+		if ( type == Short )
 			emit receivedInfoFor( contactId, Short );
+		else if ( m_pendingLong.contains( seq ) )
+			m_longTimer.start(); // servers that never send the affiliations part
+
 
 		setTransfer( 0 );
 		delete buffer;
@@ -191,6 +210,9 @@ void ICQUserInfoRequestTask::onGo()
 	
 	m_contactSequenceMap[s.id] = m_userToRequestFor;
 	m_reverseContactMap[m_userToRequestFor] = s.id;
+	m_typeForSequence[s.id] = m_type;
+	if ( m_type != Short )
+		m_pendingLong.insert( s.id );
 	
 	Transfer* t = createTransfer( f, s, sendBuf );
 	send( t );

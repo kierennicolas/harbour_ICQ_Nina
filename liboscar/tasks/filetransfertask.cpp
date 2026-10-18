@@ -359,6 +359,29 @@ bool FileTransferTask::take( int type, QByteArray cookie, Buffer b )
 	switch( type )
 	{
 	 case 0: //direct transfer ain't good enough
+		{
+		// harbour_icq_nina: with several sessions of one account (and when
+		// sending to yourself) the server also hands us our own proposals.
+		// The sender only ever gets redirects (request number 2) from the
+		// other side, and the receiver only ever gets proxy requests (3);
+		// anything else with our cookie is our own message coming back.
+		Oscar::WORD requestNumber = 1;
+		Buffer peek( b.buffer() );
+		while ( peek.bytesAvailable() >= 4 )
+		{
+			TLV tlv = peek.getTLV();
+			if ( tlv.type == 0x000A && tlv.length >= 2 )
+			{
+				requestNumber = Buffer( tlv.data ).getWord();
+				break;
+			}
+		}
+		if ( ( m_action == Send && requestNumber != 2 ) || ( m_action == Receive && requestNumber == 2 ) )
+		{
+			kDebug(OSCAR_RAW_DEBUG) << "ignoring our own proposal" << requestNumber;
+			break;
+		}
+		}
 		kDebug(OSCAR_RAW_DEBUG) << "redirect or proxy request";
 		if ( m_state != Listening )
 		{
@@ -530,13 +553,23 @@ void FileTransferTask::proxyRead()
 		kWarning(OSCAR_RAW_DEBUG) << "reading non-proxy data!";
 	}
 
-	kDebug(OSCAR_RAW_DEBUG) ;
-	QByteArray raw = m_connection->readAll(); //is this safe?
-	kDebug(OSCAR_RAW_DEBUG) ;
+	// harbour_icq_nina: read exactly one proxy packet. After 'ready' the
+	// same socket carries OFT data, which must stay in the socket for the
+	// OFT stage instead of being swallowed here.
+	while ( m_connection && m_state == ProxySetup && m_connection->bytesAvailable() >= 2 )
+	{
+		const QByteArray head = m_connection->peek( 2 );
+		const int packetLength = 2 + ( ( uchar( head.at( 0 ) ) << 8 ) | uchar( head.at( 1 ) ) );
+		if ( m_connection->bytesAvailable() < packetLength )
+			return;
+		handleProxyPacket( m_connection->read( packetLength ) );
+	}
+}
+
+void FileTransferTask::handleProxyPacket( const QByteArray &raw )
+{
 	Buffer b( raw );
-	Oscar::WORD length = b.getWord();
-	if ( b.bytesAvailable() != length )
-		kWarning(OSCAR_RAW_DEBUG) << "length is " << length << " but we have " << b.bytesAvailable() << "bytes!";
+	b.getWord(); //length
 	b.skipBytes( 2 ); //protocol version
 	Oscar::WORD command = b.getWord();
 	b.skipBytes( 6 ); //4 unknown, 2 flags
@@ -657,7 +690,7 @@ void FileTransferTask::doConnect()
 
 	QString host;
 	if ( m_proxyRequester )
-		host = QStringLiteral("ars.oscar.aol.com");
+		host = client()->settings()->fileProxyHost();
 	else
 	{
 		if ( m_ip.length() != 4 || ! m_port )
@@ -686,7 +719,7 @@ void FileTransferTask::doConnect()
 	connect( &m_timer, SIGNAL(timeout()), this, SLOT(timeout()) );
 	m_timer.start( client()->settings()->timeout()  * 1000 );
 	//try it
-	KSocketFactory::connectToHost( m_connection, QString(), host, m_proxy ? 5190 : m_port );
+	KSocketFactory::connectToHost( m_connection, QString(), host, m_proxy ? client()->settings()->fileProxyPort() : m_port );
 }
 
 void FileTransferTask::socketConnected()

@@ -269,14 +269,17 @@ void SSIModifyTask::handleContactAck()
 			break;
 		case 0x000A:
 			kWarning( OSCAR_RAW_DEBUG ) << "Error adding item ( invalid id, already in list, invalid data )";
+			client()->contactEditError( m_newItem ? m_newItem.name() : m_oldItem.name(), ackCode );
 			setSuccess( 0, QString() );
 			break;
 		case 0x000C:
 			kWarning( OSCAR_RAW_DEBUG ) << "Can't add item. Limit exceeded.";
+			client()->contactEditError( m_newItem ? m_newItem.name() : m_oldItem.name(), ackCode );
 			setSuccess( 0, QString() );
 			break;
 		case 0x000D:
 			kWarning( OSCAR_RAW_DEBUG ) << "Can't add ICQ item to AIM list ( and vice versa )";
+			client()->contactEditError( m_newItem ? m_newItem.name() : m_oldItem.name(), ackCode );
 			setSuccess( 0, QString() );
 			break;
 		case 0x000E:

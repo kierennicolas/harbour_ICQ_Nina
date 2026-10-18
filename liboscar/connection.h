@@ -137,6 +137,9 @@ public:
 	 */
 	void fatalTaskError( const Oscar::SNAC& s, int errCode );
 
+	/** harbour_icq_nina: the server refused a contact list change. */
+	void contactEditError( const QString& name, int code );
+
     /**
      * Get the chat room name for this connection.
      * @return the name of the room or QString() if not connected to a room

@@ -463,6 +463,14 @@ public:
 	/** Notify that a socket error has occurred */
 	void notifySocketError( int errCode, const QString& msg );
 
+	/** harbour_icq_nina: called by SSIModifyTask when the server refuses a
+	 * contact list change (SNAC 13/0E code). */
+	void notifyContactEditError( const QString& name, int code );
+
+	/** harbour_icq_nina: ask the server to make others ask before adding us
+	 * (ICQ "authorization required"), via the ICQ meta family. */
+	void setAuthorizationRequired( bool required );
+
 public Q_SLOTS:
 	void joinChatRoom( const QString& roomName, int exchange );
 
@@ -513,6 +521,12 @@ Q_SIGNALS:
 
 	/** we've received an authorization reply */
 	void authReplyReceived( const QString& contact, const QString& reason, bool auth );
+
+	/** harbour_icq_nina: someone added us to their contact list (13/1C). */
+	void contactAddedYou( const QString& contact );
+
+	/** harbour_icq_nina: the server refused a contact list change. */
+	void contactEditFailed( const QString& name, int code );
 
 	/** we've received a ICQ password change reply */
 	void icqPasswordChanged( bool error );
@@ -629,6 +643,9 @@ protected Q_SLOTS:
 
 	/** Change ICQ password finished */
 	void changeICQPasswordFinished();
+
+	/* harbour_icq_nina: 04/10 retrieval did not work; ask the ICQ way. */
+	void offlineRetrievalFinished();
 
 private:
 

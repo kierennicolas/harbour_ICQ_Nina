@@ -57,6 +57,8 @@
 #include "ssimodifytask.h"
 #include "ssiauthtask.h"
 #include "offlinemessagestask.h"
+#include "icqofflinemessagestask.h"
+#include "icquserinfoupdatetask.h"
 #include "task.h"
 #include "typingnotifytask.h"
 #include "userinfotask.h"
@@ -534,6 +536,7 @@ void Client::haveOwnUserInfo()
 			return;
 
 		OfflineMessagesTask *offlineMsgTask = new OfflineMessagesTask( c->rootTask() );
+		connect( offlineMsgTask, SIGNAL(finished()), this, SLOT(offlineRetrievalFinished()) );
 		offlineMsgTask->go( Task::AutoDelete );
 		d->offlineMessagesRequested = true;
 	}
@@ -857,6 +860,8 @@ void Client::initializeStaticTasks()
 	         this, SIGNAL(authRequestReceived(QString,QString)) );
 	connect( d->ssiAuthTask, SIGNAL(authReplied(QString,QString,bool)),
 	         this, SIGNAL(authReplyReceived(QString,QString,bool)) );
+	connect( d->ssiAuthTask, SIGNAL(contactAddedYou(QString)),
+	         this, SIGNAL(contactAddedYou(QString)) );
 
 	connect( d->icqInfoTask, SIGNAL(receivedInfoFor(QString,uint)),
 	         this, SLOT(receivedIcqInfo(QString,uint)) );
@@ -1860,3 +1865,39 @@ void Client::gotFileMessage( int type, const QString from, const QByteArray cook
 
 }
 
+// harbour_icq_nina additions
+
+namespace Oscar {
+
+void Client::notifyContactEditError( const QString& name, int code )
+{
+	emit contactEditFailed( name, code );
+}
+
+void Client::offlineRetrievalFinished()
+{
+	OfflineMessagesTask *task = qobject_cast<OfflineMessagesTask*>( sender() );
+	if ( !task || task->success() || !isIcq() )
+		return;
+	Connection* c = d->connections.connectionForFamily( 0x0015 );
+	if ( !c )
+		return;
+	ICQOfflineMessagesTask *icqTask = new ICQOfflineMessagesTask( c->rootTask() );
+	connect( icqTask, SIGNAL(offlineMessage(Oscar::Message)), this, SLOT(receivedMessage(Oscar::Message)) );
+	connect( icqTask, SIGNAL(offlineAuthRequest(QString,QString)), this, SIGNAL(authRequestReceived(QString,QString)) );
+	connect( icqTask, SIGNAL(offlineAuthReply(QString,QString,bool)), this, SIGNAL(authReplyReceived(QString,QString,bool)) );
+	icqTask->go( Task::AutoDelete );
+}
+
+void Client::setAuthorizationRequired( bool required )
+{
+	// ICQUserInfoUpdateTask takes ownership of the list's entries.
+	ICQShortInfo *info = new ICQShortInfo;
+	info->needsAuth.set( required );
+	QList<ICQInfoBase*> infoList;
+	infoList.append( info );
+	if ( !updateProfile( infoList ) )
+		delete info;
+}
+
+}

@@ -23,7 +23,8 @@ namespace Oscar
 Settings::Settings()
 : m_webAware(false), m_requireAuth(false), m_hideIP(false),
   m_fileProxy( false ), m_firstPort( 5190 ), m_lastPort( 5199 ), m_timeout( 10 ),
-  m_strongPasswordHash( false ), m_extendedKeyRequest( false ), m_multiConnection( -1 )
+  m_strongPasswordHash( false ), m_extendedKeyRequest( false ), m_multiConnection( -1 ),
+  m_fileProxyHost( QStringLiteral("ars.oscar.aol.com") ), m_fileProxyPort( 5190 )
 {
 }
 
@@ -129,6 +130,26 @@ void Settings::setMultiConnection( int flag )
 int Settings::multiConnection() const
 {
 	return m_multiConnection;
+}
+
+void Settings::setFileProxyHost( const QString &host )
+{
+	m_fileProxyHost = host;
+}
+
+QString Settings::fileProxyHost() const
+{
+	return m_fileProxyHost;
+}
+
+void Settings::setFileProxyPort( int port )
+{
+	m_fileProxyPort = port;
+}
+
+int Settings::fileProxyPort() const
+{
+	return m_fileProxyPort;
 }
 
 }

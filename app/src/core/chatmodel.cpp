@@ -32,6 +32,14 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
     case DeliveredRole: return m.delivered;
     case DayRole: return m.timestamp.toLocalTime().date().toString(Qt::ISODate);
     case IdRole: return m.id;
+    case KindRole: return m.kind;
+    case FileNameRole: return m.fileName;
+    case FileSizeRole: return m.fileSize;
+    case FilePathRole: return m.filePath;
+    case FileUrlRole: return m.fileUrl;
+    case FileStateRole: return m.fileState;
+    case FileDoneRole: return m_fileDone.value(m.id, m.fileState == 3 ? m.fileSize : 0);
+    case TransferIdRole: return m.transferId;
     }
     return QVariant();
 }
@@ -45,6 +53,14 @@ QHash<int, QByteArray> ChatModel::roleNames() const
         { DeliveredRole, "delivered" },
         { DayRole, "day" },
         { IdRole, "messageId" },
+        { KindRole, "kind" },
+        { FileNameRole, "fileName" },
+        { FileSizeRole, "fileSize" },
+        { FilePathRole, "filePath" },
+        { FileUrlRole, "fileUrl" },
+        { FileStateRole, "fileState" },
+        { FileDoneRole, "fileDone" },
+        { TransferIdRole, "transferId" },
     };
 }
 
@@ -66,4 +82,35 @@ void ChatModel::setDelivered(qint64 id)
             return;
         }
     }
+}
+
+int ChatModel::rowOf(qint64 id) const
+{
+    for (int i = m_messages.size() - 1; i >= 0; --i)
+        if (m_messages.at(i).id == id)
+            return i;
+    return -1;
+}
+
+void ChatModel::updateFile(qint64 id, int state, const QString &path, const QString &url)
+{
+    const int row = rowOf(id);
+    if (row < 0)
+        return;
+    StoredMessage &m = m_messages[row];
+    m.fileState = state;
+    m.filePath = path;
+    m.fileUrl = url;
+    const QModelIndex idx = index(row);
+    emit dataChanged(idx, idx, { FileStateRole, FilePathRole, FileUrlRole, FileDoneRole });
+}
+
+void ChatModel::setFileDone(qint64 id, qint64 bytes)
+{
+    const int row = rowOf(id);
+    if (row < 0)
+        return;
+    m_fileDone.insert(id, bytes);
+    const QModelIndex idx = index(row);
+    emit dataChanged(idx, idx, { FileDoneRole });
 }

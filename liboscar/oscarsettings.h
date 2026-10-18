@@ -18,6 +18,7 @@
 #ifndef OSCARSETTINGS_H
 #define OSCARSETTINGS_H
 
+#include <QString>
 #include "liboscar_export.h"
 
 namespace Oscar
@@ -80,6 +81,13 @@ public:
 	void setMultiConnection( int flag );
 	int multiConnection() const;
 
+	/* Rendezvous (file transfer) proxy. Kopete hard-coded AOL's
+	 * ars.oscar.aol.com:5190; revival services run their own. */
+	void setFileProxyHost( const QString &host );
+	QString fileProxyHost() const;
+	void setFileProxyPort( int port );
+	int fileProxyPort() const;
+
 private:
 	
 	bool m_webAware;
@@ -92,6 +100,8 @@ private:
 	bool m_strongPasswordHash;
 	bool m_extendedKeyRequest;
 	int  m_multiConnection;
+	QString m_fileProxyHost;
+	int  m_fileProxyPort;
 };
 
 }

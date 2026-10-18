@@ -19,15 +19,44 @@
 
 #include "oftmetatransfer.h"
 
+#include <QDir>
+#include <QFileInfo>
+#include <QStringList>
+
 #include <QFileInfo>
 #include <QTcpSocket>
+#include <QTimer>
 
 #include <kdebug.h>
+#include <kio/global.h>
+#include <KLocalizedString>
 
 #include "ofttransfer.h"
 #include "oftprotocol.h"
 
 #define BUFFER_SIZE 32768
+
+// harbour_icq_nina: turn a file name sent by the other side into a path
+// below the download folder ("a\001b.txt" -> "a/b.txt"; "../x" -> "x").
+static QString safeRelativePath( const QString &name )
+{
+	QString n = name;
+	n.replace( QChar( 0x01 ), QLatin1Char( '/' ) );
+	n.replace( QLatin1Char( '\\' ), QLatin1Char( '/' ) );
+	QStringList parts;
+	foreach ( const QString &part, n.split( QLatin1Char( '/' ), QString::SkipEmptyParts ) )
+	{
+		if ( part == QLatin1String( "." ) || part == QLatin1String( ".." ) )
+			continue;
+		QString p = part;
+		p.remove( QChar() );
+		if ( !p.isEmpty() )
+			parts.append( p );
+	}
+	if ( parts.isEmpty() )
+		parts.append( QStringLiteral( "file" ) );
+	return parts.join( QLatin1Char( '/' ) );
+}
 
 OftMetaTransfer::OftMetaTransfer( const QByteArray& cookie, const QStringList &files, const QString &dir, QTcpSocket *socket )
 : m_file( this ), m_socket( socket ), m_state( SetupReceive )
@@ -42,6 +71,9 @@ OftMetaTransfer::OftMetaTransfer( const QByteArray& cookie, const QStringList &f
 	m_oft.cookie = cookie;
 	m_files = files;
 	m_dir = dir;
+	// Bytes may already be waiting (sent right after the proxy's 'ready').
+	if ( m_socket->bytesAvailable() > 0 )
+		QTimer::singleShot( 0, this, SLOT(socketRead()) );
 }
 
 OftMetaTransfer::OftMetaTransfer( const QByteArray& cookie, const QStringList& files, QTcpSocket *socket )
@@ -62,6 +94,9 @@ OftMetaTransfer::OftMetaTransfer( const QByteArray& cookie, const QStringList& f
 	}
 	m_oft.fileCount = files.size();
 	m_files = files;
+	// Bytes may already be waiting (sent right after the proxy's 'ready').
+	if ( m_socket->bytesAvailable() > 0 )
+		QTimer::singleShot( 0, this, SLOT(socketRead()) );
 }
 
 void OftMetaTransfer::start()
@@ -135,22 +170,60 @@ void OftMetaTransfer::socketError( QAbstractSocket::SocketError e )
 	emit transferError( e, desc );
 }
 
+// harbour_icq_nina: Kopete parsed whatever one read() returned as exactly
+// one OFT header (or as file data). Through a proxy, or on a slow link, a
+// header can arrive in pieces or together with other bytes, so buffer the
+// input and take complete headers and only the expected file bytes.
 void OftMetaTransfer::socketRead()
 {
-	if ( m_state == Receiving ) //raw file data
-		saveData();
-	else //oft packet
-		readOft();
+	m_readBuffer += m_socket->readAll();
+	processInput();
 }
 
-void OftMetaTransfer::readOft()
+void OftMetaTransfer::processInput()
+{
+	while ( !m_readBuffer.isEmpty() )
+	{
+		if ( m_state == Receiving ) //raw file data
+		{
+			saveData();
+			continue;
+		}
+		if ( m_readBuffer.size() < 6 )
+			return;
+		if ( !m_readBuffer.startsWith( "OFT2" ) )
+		{
+			kWarning(OSCAR_RAW_DEBUG) << "not an OFT2 header";
+			m_readBuffer.clear();
+			emit transferError( KIO::ERR_CONNECTION_BROKEN, i18n("Unexpected data from the other side") );
+			return;
+		}
+		const int length = ( uchar( m_readBuffer.at( 4 ) ) << 8 ) | uchar( m_readBuffer.at( 5 ) );
+		if ( length < 6 )
+		{
+			m_readBuffer.clear();
+			return;
+		}
+		if ( m_readBuffer.size() < length )
+			return; // wait for the rest of the header
+		const QByteArray packet = m_readBuffer.left( length );
+		m_readBuffer.remove( 0, length );
+		readOft( packet );
+	}
+}
+
+void OftMetaTransfer::readOft( const QByteArray &raw )
 {
 	kDebug(OSCAR_RAW_DEBUG) ;
-	QByteArray raw = m_socket->readAll(); //is this safe?
 	OftProtocol p;
 	uint b=0;
 	//remember we're responsible for freeing this!
 	OftTransfer *t = static_cast<OftTransfer*>( p.parse( raw, b ) );
+	if ( !t )
+	{
+		kWarning(OSCAR_RAW_DEBUG) << "could not parse OFT header";
+		return;
+	}
 	OFT data = t->data();
 	kDebug(OSCAR_RAW_DEBUG) << "checksum: " << data.checksum;
 	kDebug(OSCAR_RAW_DEBUG) << "sentChecksum: " << data.sentChecksum;
@@ -227,7 +300,13 @@ void OftMetaTransfer::handleReceiveSetup( const OFT &oft )
 	if ( currentFileIndex < m_files.count() )
 		m_file.setFileName( m_files.at( currentFileIndex ) );
 	else
-		m_file.setFileName( m_dir + oft.fileName );
+	{
+		// harbour_icq_nina: the name comes from the other side. OFT separates
+		// folders with 0x01; never let a name climb out of the chosen folder.
+		const QString relative = safeRelativePath( oft.fileName );
+		m_file.setFileName( m_dir + relative );
+		QDir().mkpath( QFileInfo( m_file.fileName() ).absolutePath() );
+	}
 
 	emit fileStarted( m_oft.fileName, m_file.fileName() );
 	emit fileStarted( m_file.fileName(), m_oft.fileSize );
@@ -402,7 +481,15 @@ void OftMetaTransfer::write()
 
 void OftMetaTransfer::saveData()
 {
-	QByteArray raw = m_socket->readAll(); //is this safe?
+	// Only this file's bytes; anything after them is the next OFT header.
+	const qint64 wanted = qint64( m_oft.fileSize ) - qint64( m_oft.bytesSent );
+	QByteArray raw = m_readBuffer.left( int( qMax( qint64( 0 ), qMin( wanted, qint64( m_readBuffer.size() ) ) ) ) );
+	m_readBuffer.remove( 0, raw.size() );
+	if ( raw.isEmpty() )
+	{
+		m_readBuffer.clear();
+		return;
+	}
 	int written = m_file.write( raw );
 	if( written == -1 )
 	{ //FIXME: handle this properly

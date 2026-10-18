@@ -4,6 +4,7 @@ TARGET = tst_core
 CONFIG += c++11 console testcase
 CONFIG -= app_bundle
 QT += testlib
+DEFINES += ICQNINA_TESTING
 include(../../app/src/core/core.pri)
 isEmpty(LIBOSCAR_BUILD): LIBOSCAR_BUILD = $$OUT_PWD/../../liboscar
 LIBS += -L$$LIBOSCAR_BUILD -loscar

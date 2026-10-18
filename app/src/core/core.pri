@@ -3,5 +3,7 @@ CORE = $$PWD
 LIBOSCAR = $$PWD/../../../liboscar
 QT += network gui qml sql
 INCLUDEPATH += $$CORE $$LIBOSCAR $$LIBOSCAR/tasks $$LIBOSCAR/utils $$LIBOSCAR/compat
-SOURCES += $$CORE/accountmanager.cpp $$CORE/chatmodel.cpp $$CORE/contactmodel.cpp $$CORE/historystore.cpp
-HEADERS += $$CORE/accountmanager.h $$CORE/chatmodel.h $$CORE/contactmodel.h $$CORE/historystore.h
+SOURCES += $$CORE/accountmanager.cpp $$CORE/chatmodel.cpp $$CORE/contactmodel.cpp $$CORE/historystore.cpp \
+    $$CORE/linkupload.cpp $$CORE/searchmodel.cpp $$CORE/transfermanager.cpp
+HEADERS += $$CORE/accountmanager.h $$CORE/chatmodel.h $$CORE/contactmodel.h $$CORE/historystore.h \
+    $$CORE/linkupload.h $$CORE/searchmodel.h $$CORE/transfermanager.h

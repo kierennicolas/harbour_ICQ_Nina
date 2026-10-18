@@ -81,7 +81,8 @@ private:
 	void rAgree(); //sender agrees to resume
 	void rAck(); //resume ack
 	void saveData(); //save incoming data to disk
-	void readOft(); //handle incoming oft packet
+	void readOft( const QByteArray &raw ); //handle incoming oft packet
+	void processInput(); // harbour_icq_nina: split buffered input into packets
 
 	/** return checksum of our file, up to bytes */
 	Oscar::DWORD fileChecksum( QFile& file, int bytes = -1 ) const;
@@ -96,6 +97,7 @@ private:
 	QStringList m_files; //list of files that we want to send
 
 	QTcpSocket *m_socket; //where we actually send file data
+	QByteArray m_readBuffer; // harbour_icq_nina: bytes read but not yet handled
 	enum State { SetupReceive, SetupSend, Receiving, Sending, Done };
 	State m_state;
 };

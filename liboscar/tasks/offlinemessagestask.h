@@ -25,9 +25,14 @@ class Transfer;
 
 /**
 @author Roman Jarosz
+
+harbour_icq_nina: waits for the server's 04/17 "done" reply. If the server
+does not answer (it does not support 04/10 retrieval), the task fails, and
+the client then asks the ICQ way (ICQOfflineMessagesTask).
 */
 class OfflineMessagesTask : public Task
 {
+Q_OBJECT
 public:
 	OfflineMessagesTask( Task* parent );
 
@@ -35,6 +40,11 @@ public:
 	bool take( Transfer* transfer ) Q_DECL_OVERRIDE;
 	void onGo() Q_DECL_OVERRIDE;
 
+private Q_SLOTS:
+	void noReply();
+
+private:
+	Oscar::DWORD m_sequence;
 };
 
 #endif

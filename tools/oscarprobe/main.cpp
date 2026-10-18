@@ -6,6 +6,10 @@
 // and is never printed. Part of harbour_icq_nina; GPL-3.0-or-later.
 
 #include <QCommandLineParser>
+#include <QCryptographicHash>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QLoggingCategory>
 #include <QRegularExpression>
 #include <QCoreApplication>
@@ -18,6 +22,8 @@
 
 #include "client.h"
 #include "contactmanager.h"
+#include "filetransferhandler.h"
+#include "icquserinfo.h"
 #include "oscarmessage.h"
 #include "oscarsettings.h"
 #include "oscartypes.h"
@@ -65,7 +71,12 @@ void traceHandler(QtMsgType type, const QMessageLogContext &ctx, const QString &
             "SEND |RECV |Starting login|Sending the FLAP version|Sending the login cookie|Got the authorization key|"
             "stage one|stage two|no errors from stage|errors reported|Sending channel 0x04|Clearing all connections|"
             "Socket open|unknown wire format|start byte is|We should reconnect|Connect to: host|found TLV\\(\\d+\\)|"
-            "error: |after error|emitting finished|Sending client ready|Sending SSI|Requesting|Got |Setting status)"));
+            "error: |after error|emitting finished|Sending client ready|Sending SSI|Requesting|Got |Setting status|"
+            "Offline messages delivered|Server does not retrieve offline|No reply to 04/10|End of ICQ offline messages|"
+            "Ignoring offline message|ignoring our own proposal|proxy requested|redirect or proxy request|"
+            "other user (cancelled|acceptetd)|listening for connections|listening failed|connection failed somehow|"
+            "socket error|Received (basic|work|more|notes|email|interest|organization|short)|"
+            "Can't add item|SSI Update successful|Acknowledgement code)"));
         if (!safe.match(line).hasMatch())
             return;
         static const QRegularExpression tlv(QStringLiteral("^(found TLV\\(\\d+\\)( \\[[A-Z ]+\\])?).*$"));
@@ -181,6 +192,16 @@ int main(int argc, char **argv)
         {QStringLiteral("strong-hash"), QStringLiteral("BUCP: send the strong MD5 password hash with TLV 0x4C.")},
         {QStringLiteral("key-tlvs"), QStringLiteral("BUCP: add TLVs 0x4B and 0x5A to the key request.")},
         {QStringLiteral("multiconn"), QStringLiteral("Send multi-session TLV 0x4A with this value (also for ICQ)."), QStringLiteral("n")},
+        {QStringLiteral("info"), QStringLiteral("Request ICQ short and full info for this number."), QStringLiteral("id")},
+        {QStringLiteral("search-uin"), QStringLiteral("ICQ directory search by number."), QStringLiteral("id")},
+        {QStringLiteral("search-nick"), QStringLiteral("ICQ white pages search by nickname."), QStringLiteral("nick")},
+        {QStringLiteral("send-file"), QStringLiteral("Offer this file to --to (OSCAR file transfer)."), QStringLiteral("path")},
+        {QStringLiteral("receive-dir"), QStringLiteral("Accept incoming files into this folder."), QStringLiteral("dir")},
+        {QStringLiteral("expect-file"), QStringLiteral("Exit with an error unless a file of this name is received."), QStringLiteral("name")},
+        {QStringLiteral("ft-proxy"), QStringLiteral("Send files through the rendezvous proxy from the start.")},
+        {QStringLiteral("ft-proxy-host"), QStringLiteral("Rendezvous proxy host."), QStringLiteral("host")},
+        {QStringLiteral("ft-proxy-port"), QStringLiteral("Rendezvous proxy port."), QStringLiteral("port"), QStringLiteral("5190")},
+        {QStringLiteral("ft-timeout"), QStringLiteral("Seconds to wait for each file transfer connection."), QStringLiteral("s"), QStringLiteral("10")},
     });
     p.process(app);
 
@@ -217,6 +238,23 @@ int main(int argc, char **argv)
     client.clientSettings()->setExtendedKeyRequest(p.isSet(QStringLiteral("key-tlvs")));
     if (p.isSet(QStringLiteral("multiconn")))
         client.clientSettings()->setMultiConnection(p.value(QStringLiteral("multiconn")).toInt());
+    client.clientSettings()->setFileProxy(p.isSet(QStringLiteral("ft-proxy")));
+    if (p.isSet(QStringLiteral("ft-proxy-host")))
+        client.clientSettings()->setFileProxyHost(p.value(QStringLiteral("ft-proxy-host")));
+    client.clientSettings()->setFileProxyPort(p.value(QStringLiteral("ft-proxy-port")).toInt());
+    client.clientSettings()->setTimeout(p.value(QStringLiteral("ft-timeout")).toInt());
+    const QString sendFile = p.value(QStringLiteral("send-file"));
+    const QString receiveDir = p.value(QStringLiteral("receive-dir"));
+    const QString expectFile = p.value(QStringLiteral("expect-file"));
+    bool fileSeen = false;
+    auto sha = [](const QString &path) {
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly))
+            return QString();
+        QCryptographicHash h(QCryptographicHash::Sha256);
+        h.addData(&f);
+        return QString::fromLatin1(h.result().toHex().left(16));
+    };
 
     out(QStringLiteral("CONFIG host=%1 port=%2 tls=%3 account=%4 icq=%5 identity=\"%6\" password_length=%7 strong_hash=%8 key_tlvs=%9 multiconn=%10")
         .arg(host).arg(port).arg(tls ? "yes" : "no").arg(uin).arg(isIcq ? "yes" : "no")
@@ -270,7 +308,55 @@ int main(int argc, char **argv)
         for (const OContact &c : contacts)
             out(QStringLiteral("  CONTACT %1 alias=\"%2\" gid=%3 awaiting_auth=%4")
                 .arg(who(c.name()), shown(c.alias())).arg(c.gid()).arg(c.waitingAuth() ? "yes" : "no"));
-        if (!to.isEmpty()) {
+        if (p.isSet(QStringLiteral("info"))) {
+            const QString id = p.value(QStringLiteral("info"));
+            out(QStringLiteral("INFO-REQUEST %1").arg(who(id)));
+            client.requestShortInfo(id);
+            QTimer::singleShot(1500, [&client, id]() { client.requestFullInfo(id); });
+        }
+        if (p.isSet(QStringLiteral("search-uin"))) {
+            const QString id = p.value(QStringLiteral("search-uin"));
+            QTimer::singleShot(3000, [&client, id]() {
+                out(QStringLiteral("SEARCH-REQUEST uin=%1").arg(who(id)));
+                client.uinSearch(id);
+            });
+        }
+        if (p.isSet(QStringLiteral("search-nick"))) {
+            const QString nick = p.value(QStringLiteral("search-nick"));
+            QTimer::singleShot(4500, [&client, nick]() {
+                out(QStringLiteral("SEARCH-REQUEST nick=\"%1\"").arg(shown(nick)));
+                ICQWPSearchInfo info;
+                info.nickName = nick.toUtf8();
+                client.whitePagesSearch(info);
+            });
+        }
+        if (!to.isEmpty() && !sendFile.isEmpty()) {
+            const int delayMs = p.value(QStringLiteral("send-delay")).toInt() * 1000;
+            QTimer::singleShot(delayMs, [&]() {
+                FileTransferHandler *h = client.createFileTransfer(to, QStringList() << sendFile);
+                if (!h) {
+                    out(QStringLiteral("FT-ERROR could not start"));
+                    return;
+                }
+                const QString name = QFileInfo(sendFile).fileName();
+                out(QStringLiteral("FT-SEND to=%1 name=%2 size=%3 sha=%4 proxy=%5")
+                    .arg(who(to), name).arg(QFileInfo(sendFile).size()).arg(sha(sendFile))
+                    .arg(client.clientSettings()->fileProxy() ? client.clientSettings()->fileProxyHost() : QStringLiteral("no")));
+                QObject::connect(h, &FileTransferHandler::transferError, [](int code, const QString &err) {
+                    out(QStringLiteral("FT-ERROR code=%1 \"%2\"").arg(code).arg(err));
+                });
+                QObject::connect(h, &FileTransferHandler::transferCancelled, []() { out(QStringLiteral("FT-CANCELLED")); });
+                QObject::connect(h, &FileTransferHandler::transferFinished, [&app]() {
+                    out(QStringLiteral("FT-SENT"));
+                    QTimer::singleShot(1500, &app, &QCoreApplication::quit);
+                });
+                QObject::connect(h, &FileTransferHandler::transferProcessed, [](unsigned int n) {
+                    static unsigned int last = 0;
+                    if (n - last >= 65536 || last == 0) { last = n; out(QStringLiteral("FT-PROGRESS %1").arg(n)); }
+                });
+                h->send();
+            });
+        } else if (!to.isEmpty()) {
             const int delayMs = p.value(QStringLiteral("send-delay")).toInt() * 1000;
             QTimer::singleShot(delayMs, [&]() {
                 Oscar::Message msg;
@@ -318,6 +404,58 @@ int main(int argc, char **argv)
         out(QStringLiteral("TYPING %1").arg(::who(who)));
     });
 
+    QObject::connect(&client, &Client::receivedIcqShortInfo, [&](const QString &id) {
+        const ICQShortInfo i = client.getShortInfo(id);
+        out(QStringLiteral("INFO-SHORT %1 nick=\"%2\" first=\"%3\" last=\"%4\" auth=%5")
+            .arg(who(id), shown(QString::fromUtf8(i.nickname)), shown(QString::fromUtf8(i.firstName)), shown(QString::fromUtf8(i.lastName)))
+            .arg(i.needsAuth.get() ? "required" : "no"));
+    });
+    QObject::connect(&client, &Client::receivedIcqLongInfo, [&](const QString &id) {
+        const ICQGeneralUserInfo g = client.getGeneralInfo(id);
+        const ICQMoreUserInfo m = client.getMoreInfo(id);
+        out(QStringLiteral("INFO-FULL %1 nick=\"%2\" city=\"%3\" country=%4 age=%5 gender=%6 auth=%7")
+            .arg(who(id), shown(QString::fromUtf8(g.nickName.get())), shown(QString::fromUtf8(g.city.get())))
+            .arg(g.country.get()).arg(m.age.get()).arg(m.gender.get()).arg(g.needsAuth.get() ? "required" : "no"));
+    });
+    QObject::connect(&client, &Client::gotSearchResults, [&](const ICQSearchResult &r) {
+        out(QStringLiteral("SEARCH-RESULT uin=%1 nick=\"%2\" online=%3 auth=%4")
+            .arg(who(QString::number(r.uin)), shown(QString::fromUtf8(r.nickName)))
+            .arg(r.online ? "yes" : "no").arg(r.auth ? "required" : "no"));
+    });
+    QObject::connect(&client, &Client::endOfSearch, [&](int left) {
+        out(QStringLiteral("SEARCH-END users_left=%1").arg(left));
+    });
+    QObject::connect(&client, &Client::contactAddedYou, [&](const QString &id) {
+        out(QStringLiteral("ADDED-YOU %1").arg(who(id)));
+    });
+    QObject::connect(&client, &Client::contactEditFailed, [&](const QString &id, int code) {
+        out(QStringLiteral("CONTACT-EDIT-FAILED %1 code=0x%2").arg(who(id)).arg(code, 0, 16));
+    });
+    QObject::connect(&client, &Client::incomingFileTransfer, [&](FileTransferHandler *h) {
+        out(QStringLiteral("FT-OFFER from=%1 name=%2 files=%3 size=%4")
+            .arg(who(h->contact()), shown(h->fileName(), QStringLiteral("oscarprobe"))).arg(h->fileCount()).arg(h->totalSize()));
+        if (receiveDir.isEmpty()) {
+            h->cancel();
+            out(QStringLiteral("FT-DECLINED"));
+            return;
+        }
+        QDir().mkpath(receiveDir);
+        const QString target = QDir(receiveDir).filePath(h->fileName().isEmpty() ? QStringLiteral("received.bin") : QFileInfo(h->fileName()).fileName());
+        QObject::connect(h, &FileTransferHandler::transferError, [](int code, const QString &err) {
+            out(QStringLiteral("FT-ERROR code=%1 \"%2\"").arg(code).arg(err));
+        });
+        QObject::connect(h, &FileTransferHandler::transferCancelled, []() { out(QStringLiteral("FT-CANCELLED")); });
+        QObject::connect(h, &FileTransferHandler::transferFinished, [&, target]() {
+            const QFileInfo fi(target);
+            out(QStringLiteral("FT-RECEIVED name=%1 size=%2 sha=%3").arg(shown(fi.fileName(), QStringLiteral("oscarprobe"))).arg(fi.size()).arg(sha(target)));
+            if (!expectFile.isEmpty() && fi.fileName() == expectFile) {
+                fileSeen = true;
+                QTimer::singleShot(1500, &app, &QCoreApplication::quit);
+            }
+        });
+        h->saveAs(QStringList() << target);
+    });
+
     client.start(host, port, uin, password);
     client.setStatus(statusFromName(p.value(QStringLiteral("status"))));
     client.connectToServer(host, port, tls, tls ? host : QString());
@@ -334,6 +472,8 @@ int main(int argc, char **argv)
         g_exitCode = 1;
     if (!expect.isEmpty() && g_exitCode == 0 && !g_expectedSeen)
         g_exitCode = 3;
+    if (!expectFile.isEmpty() && g_exitCode == 0 && !fileSeen)
+        g_exitCode = 4;
     out(QStringLiteral("RESULT login=%1 received=%2 acked=%3 exit=%4")
         .arg(g_loggedIn ? "ok" : "failed").arg(g_received).arg(g_acked).arg(g_exitCode));
     return g_exitCode;

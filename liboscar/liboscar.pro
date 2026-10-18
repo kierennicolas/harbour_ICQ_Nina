@@ -74,6 +74,7 @@ SOURCES += \
     tasks/sendmessagetask.cpp \
     tasks/icqtask.cpp \
     tasks/offlinemessagestask.cpp \
+    tasks/icqofflinemessagestask.cpp \
     tasks/ssiauthtask.cpp \
     tasks/userinfotask.cpp \
     tasks/icquserinfotask.cpp \
@@ -146,6 +147,7 @@ HEADERS += \
     tasks/messageacktask.h \
     tasks/messagereceivertask.h \
     tasks/offlinemessagestask.h \
+    tasks/icqofflinemessagestask.h \
     tasks/onlinenotifiertask.h \
     tasks/oscarlogintask.h \
     tasks/ownuserinfotask.h \

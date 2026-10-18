@@ -10,13 +10,24 @@
 
 struct StoredMessage
 {
+    enum Kind { Text = 0, File = 1 };
+
     qint64 id = 0;
     QString contact;
     bool outgoing = false;
-    QString text;
+    QString text;          // for files: a one-line summary for the contact list
     QDateTime timestamp;
     bool delivered = false;
     bool read = true;
+
+    int kind = Text;
+    // Files (kind == File):
+    QString fileName;
+    qint64 fileSize = 0;
+    QString filePath;      // the local file (sent, or saved when received)
+    QString fileUrl;       // download link when sent as a link
+    int fileState = 0;     // TransferModel::State
+    QString transferId;
 };
 
 struct StoredContact
@@ -36,6 +47,10 @@ public:
 
     qint64 addMessage(const StoredMessage &m);
     void setDelivered(qint64 id);
+    void updateFile(qint64 id, int state, const QString &path, const QString &url);
+    // Whether an incoming message with this text from this contact was
+    // stored within toleranceSecs of when (offline messages can arrive twice).
+    bool hasIncoming(const QString &contact, const QString &text, const QDateTime &when, int toleranceSecs) const;
     void markRead(const QString &contact);
     QVector<StoredMessage> messages(const QString &contact, int limit = 300) const;
     int unreadCount(const QString &contact) const;
@@ -46,6 +61,7 @@ public:
     QVector<StoredContact> contacts() const;
 
 private:
+    bool migrate();
     QSqlDatabase m_db;
     QString m_account;
     QString m_connection;

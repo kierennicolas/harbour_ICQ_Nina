@@ -6,14 +6,18 @@
 #include <QQmlEngine>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QTextCodec>
 #include <QTextDocument>
 
 #include "chatmodel.h"
+#include "linkupload.h"
 
 #include "client.h"
 #include "contact.h"
 #include "contactmanager.h"
+#include "filetransferhandler.h"
+#include "icquserinfo.h"
 #include "oscarmessage.h"
 #include "oscarsettings.h"
 #include "oscartypes.h"
@@ -100,17 +104,72 @@ Oscar::ClientVersion *makeVersion(bool icq)
     return v;
 }
 
+// NINA's rendezvous proxy for file transfers. NINA's patcher maps AOL's
+// *.aol.com hosts to *.nina.bz (same length), so AOL's ars.oscar.aol.com
+// becomes this one.
+const char kNinaProxyHost[] = "ars.oscar.nina.bz";
+
+// Text from old ICQ clients and the ICQ directory: UTF-8 when it is valid
+// UTF-8, otherwise Windows-1252.
+QString legacyText(const QByteArray &bytes)
+{
+    QTextCodec::ConverterState state;
+    const QString text = QTextCodec::codecForName("UTF-8")->toUnicode(bytes.constData(), bytes.size(), &state);
+    if (state.invalidChars == 0)
+        return text;
+    if (QTextCodec *cp = QTextCodec::codecForName("windows-1252"))
+        return cp->toUnicode(bytes);
+    return QString::fromLatin1(bytes);
+}
+
+QString countryName(int code)
+{
+    // ICQ stores countries as telephone codes.
+    static const QHash<int, const char *> names = {
+        { 1, "United States" }, { 7, "Russia" }, { 20, "Egypt" }, { 27, "South Africa" },
+        { 30, "Greece" }, { 31, "Netherlands" }, { 32, "Belgium" }, { 33, "France" },
+        { 34, "Spain" }, { 36, "Hungary" }, { 39, "Italy" }, { 40, "Romania" },
+        { 41, "Switzerland" }, { 42, "Czech Republic" }, { 43, "Austria" }, { 44, "United Kingdom" },
+        { 45, "Denmark" }, { 46, "Sweden" }, { 47, "Norway" }, { 48, "Poland" },
+        { 49, "Germany" }, { 51, "Peru" }, { 52, "Mexico" }, { 54, "Argentina" },
+        { 55, "Brazil" }, { 56, "Chile" }, { 57, "Colombia" }, { 58, "Venezuela" },
+        { 60, "Malaysia" }, { 61, "Australia" }, { 62, "Indonesia" }, { 63, "Philippines" },
+        { 64, "New Zealand" }, { 65, "Singapore" }, { 66, "Thailand" }, { 81, "Japan" },
+        { 82, "South Korea" }, { 84, "Vietnam" }, { 86, "China" }, { 90, "Turkey" },
+        { 91, "India" }, { 92, "Pakistan" }, { 98, "Iran" }, { 107, "Canada" },
+        { 112, "Kazakhstan" }, { 350, "Gibraltar" }, { 351, "Portugal" }, { 352, "Luxembourg" },
+        { 353, "Ireland" }, { 354, "Iceland" }, { 356, "Malta" }, { 357, "Cyprus" },
+        { 358, "Finland" }, { 359, "Bulgaria" }, { 370, "Lithuania" }, { 371, "Latvia" },
+        { 372, "Estonia" }, { 373, "Moldova" }, { 374, "Armenia" }, { 375, "Belarus" },
+        { 380, "Ukraine" }, { 381, "Serbia" }, { 385, "Croatia" }, { 386, "Slovenia" },
+        { 387, "Bosnia and Herzegovina" }, { 389, "North Macedonia" }, { 420, "Czech Republic" },
+        { 421, "Slovakia" }, { 852, "Hong Kong" }, { 886, "Taiwan" }, { 972, "Israel" },
+        { 994, "Azerbaijan" }, { 995, "Georgia" }, { 998, "Uzbekistan" },
+    };
+    if (code <= 0)
+        return QString();
+    const char *n = names.value(code);
+    return n ? QString::fromLatin1(n) : QString::number(code);
+}
+
 } // namespace
 
-AccountManager::AccountManager(const QString &configDir, const QString &dataDir, QObject *parent)
+AccountManager::AccountManager(const QString &configDir, const QString &dataDir, QObject *parent,
+                               const QString &downloadDir)
     : QObject(parent),
       m_configDir(configDir),
       m_dataDir(dataDir),
       m_contacts(new ContactModel(this)),
-      m_network(new QNetworkConfigurationManager(this))
+      m_network(new QNetworkConfigurationManager(this)),
+      m_search(new SearchModel(this))
 {
     QDir().mkpath(m_configDir);
     QDir().mkpath(m_dataDir);
+    m_transfers = new TransferManager(this, downloadDir.isEmpty()
+            ? QStandardPaths::writableLocation(QStandardPaths::DownloadLocation) : downloadDir);
+    m_searchTimer.setSingleShot(true);
+    m_searchTimer.setInterval(20000);
+    connect(&m_searchTimer, &QTimer::timeout, this, &AccountManager::finishSearch);
 
     m_reconnectTimer.setSingleShot(true);
     connect(&m_reconnectTimer, &QTimer::timeout, this, &AccountManager::reconnect);
@@ -170,6 +229,7 @@ void AccountManager::loadSettings()
         m_status = StatusOnline;
     m_statusMessage = s.value(QStringLiteral("statusMessage")).toString();
     m_stayAwake = s.value(QStringLiteral("stayAwake"), false).toBool();
+    m_proxyTransfers = s.value(QStringLiteral("proxyTransfers"), true).toBool();
 }
 
 void AccountManager::saveSettings()
@@ -178,9 +238,11 @@ void AccountManager::saveSettings()
     if (m_uin.isEmpty()) {
         s.clear();
         s.setValue(QStringLiteral("stayAwake"), m_stayAwake);
+        s.setValue(QStringLiteral("proxyTransfers"), m_proxyTransfers);
         return;
     }
     s.setValue(QStringLiteral("stayAwake"), m_stayAwake);
+    s.setValue(QStringLiteral("proxyTransfers"), m_proxyTransfers);
     s.setValue(QStringLiteral("uin"), m_uin);
     if (m_rememberPassword && !m_password.isEmpty())
         s.setValue(QStringLiteral("password"), m_password);
@@ -386,10 +448,23 @@ void AccountManager::startClient()
     connect(m_client, &Client::userStoppedTyping, this, &AccountManager::onTypingStopped);
     connect(m_client, &Client::authRequestReceived, this, &AccountManager::onAuthRequest);
     connect(m_client, &Client::authReplyReceived, this, &AccountManager::onAuthReply);
+    connect(m_client, &Client::contactEditFailed, this, &AccountManager::onContactEditFailed);
+    connect(m_client, &Client::contactAddedYou, this, &AccountManager::onContactAddedYou);
+    connect(m_client, &Client::receivedIcqShortInfo, this, &AccountManager::onShortInfo);
+    connect(m_client, &Client::receivedIcqLongInfo, this, &AccountManager::onLongInfo);
+    connect(m_client, &Client::gotSearchResults, this, &AccountManager::onSearchResult);
+    connect(m_client, &Client::endOfSearch, this, &AccountManager::onSearchEnd);
+    connect(m_client, &Client::incomingFileTransfer, this, &AccountManager::onIncomingFile);
     ContactManager *ssi = m_client->ssiManager();
     connect(ssi, &ContactManager::contactAdded, this, &AccountManager::onContactChanged);
     connect(ssi, &ContactManager::contactUpdated, this, &AccountManager::onContactChanged);
     connect(ssi, &ContactManager::contactRemoved, this, &AccountManager::onContactRemoved);
+    connect(ssi, &ContactManager::groupAdded, this, &AccountManager::onGroupChanged);
+    connect(ssi, &ContactManager::groupUpdated, this, &AccountManager::onGroupChanged);
+    connect(ssi, &ContactManager::groupRemoved, this, &AccountManager::onGroupChanged);
+    connect(ssi, &ContactManager::itemChanged, this, &AccountManager::refreshGroupsAndPrivacy);
+    applyFileSettings();
+    m_transfers->setClient(m_client);
 
     m_client->start(host, port, m_uin, m_password);
     m_client->setStatus(wireStatus(m_status), m_statusMessage);
@@ -405,6 +480,9 @@ void AccountManager::dropClient()
     m_client = nullptr;
     disconnect(c, nullptr, this, nullptr);
     disconnect(c->ssiManager(), nullptr, this, nullptr);
+    m_transfers->setClient(nullptr);
+    if (m_searching)
+        finishSearch();
     c->close();
     c->deleteLater();
     // Messages still waiting for an acknowledgement stay "sending".
@@ -457,28 +535,128 @@ void AccountManager::rebuildContactsFromServer()
     }
     m_contacts->setContacts(items);
     m_history.saveContacts(cache);
+    refreshGroupsAndPrivacy();
 }
 
 void AccountManager::onHaveContactList()
 {
     rebuildContactsFromServer();
+    flushPendingAdds();
+    if (isIcq() && m_client)
+        m_client->requestFullInfo(m_uin); // our nickname and "authorization required"
 }
 
 void AccountManager::onContactChanged(const OContact &c)
 {
-    if (c.type() != Oscar::ROSTER_CONTACT || c.name().isEmpty())
+    if (c.type() != Oscar::ROSTER_CONTACT || c.name().isEmpty()) {
+        refreshGroupsAndPrivacy(); // permit/deny/ignore items and settings
         return;
+    }
     ContactModel::Item it;
     it.uin = c.name();
     it.alias = c.alias();
     it.group = groupName(c.gid());
     it.awaitingAuth = c.waitingAuth();
     m_contacts->upsert(it);
+    m_history.saveContacts([this]() {
+        QVector<StoredContact> cache;
+        for (const ContactModel::Item &i : m_contacts->items())
+            if (!i.group.isEmpty())
+                cache.append({ i.uin, i.alias, i.group });
+        return cache;
+    }());
+
+    // Added with "authorization required": now ask for it.
+    const QString key = normalized(c.name());
+    if (m_authReasons.contains(key)) {
+        const QString reason = m_authReasons.take(key);
+        if (c.waitingAuth() && m_client)
+            m_client->requestAuth(c.name(), reason);
+    }
 }
 
 void AccountManager::onContactRemoved(const QString &contact)
 {
+    // The ignore/visible/invisible lists use the same signal.
+    refreshGroupsAndPrivacy();
+    if (m_client && m_client->ssiManager()->findContact(Oscar::normalize(contact)))
+        return;
+    if (!m_contacts->contains(contact) || m_contacts->items().isEmpty())
+        return;
+    // Keep the conversation (with its history) in the list, outside any group.
+    ContactModel::Item it;
+    it.uin = contact;
     m_contacts->remove(contact);
+    if (!m_history.messages(contact, 1).isEmpty()) {
+        m_contacts->upsert(it);
+        for (const StoredMessage &last : m_history.lastMessages())
+            if (normalized(last.contact) == normalized(contact))
+                m_contacts->setLastMessage(contact, last.text, last.timestamp);
+    }
+}
+
+void AccountManager::onGroupChanged()
+{
+    refreshGroupsAndPrivacy();
+    flushPendingAdds();
+}
+
+QString AccountManager::normalized(const QString &uin)
+{
+    return Oscar::normalize(uin);
+}
+
+void AccountManager::refreshGroupsAndPrivacy()
+{
+    if (!m_client)
+        return;
+    ContactManager *ssi = m_client->ssiManager();
+    QStringList groups;
+    for (const OContact &g : ssi->groupList())
+        if (g.gid() != 0 && !g.name().isEmpty())
+            groups << g.name();
+    groups.sort(Qt::CaseInsensitive);
+    if (groups != m_groups) {
+        m_groups = groups;
+        emit groupsChanged();
+        // Contacts show their group's name; a rename changes it.
+        for (const OContact &c : ssi->contactList()) {
+            if (c.type() != Oscar::ROSTER_CONTACT || c.name().isEmpty())
+                continue;
+            ContactModel::Item it;
+            it.uin = c.name();
+            it.alias = c.alias();
+            it.group = groupName(c.gid());
+            it.awaitingAuth = c.waitingAuth();
+            m_contacts->upsert(it);
+        }
+    }
+
+    auto names = [](const QList<OContact> &items) {
+        QStringList out;
+        for (const OContact &c : items)
+            if (!c.name().isEmpty())
+                out << c.name();
+        out.sort(Qt::CaseInsensitive);
+        return out;
+    };
+    const QStringList blocked = names(ssi->ignoreList());
+    const QStringList visible = names(ssi->visibleList());
+    const QStringList invisible = names(ssi->invisibleList());
+    int mode = PrivacyUnknown;
+    const OContact settings = ssi->visibilityItem();
+    if (settings) {
+        const Oscar::TLV t = Oscar::findTLV(settings.tlvList(), 0x00CA);
+        if (t && t.length >= 1)
+            mode = quint8(t.data.at(0));
+    }
+    if (blocked != m_blocked || visible != m_visibleTo || invisible != m_invisibleTo || mode != m_privacyMode) {
+        m_blocked = blocked;
+        m_visibleTo = visible;
+        m_invisibleTo = invisible;
+        m_privacyMode = mode;
+        emit privacyChanged();
+    }
 }
 
 void AccountManager::onHaveOwnInfo()
@@ -619,6 +797,11 @@ ChatModel *AccountManager::chat(const QString &uin)
 
 bool AccountManager::sendMessage(const QString &uin, const QString &rawText)
 {
+    return sendText(uin, rawText, true);
+}
+
+bool AccountManager::sendText(const QString &uin, const QString &rawText, bool record)
+{
     const QString text = rawText.trimmed();
     if (text.isEmpty() || m_state != Online || !m_client)
         return false;
@@ -636,6 +819,8 @@ bool AccountManager::sendMessage(const QString &uin, const QString &rawText)
     msg.setTimestamp(QDateTime::currentDateTime());
     msg.setChannel(0x01);
     m_client->sendMessage(msg);
+    if (!record)
+        return true;
 
     StoredMessage m;
     m.contact = uin;
@@ -672,12 +857,40 @@ void AccountManager::onMessage(const Oscar::Message &msg)
 {
     if (msg.hasProperty(Oscar::Message::StatusMessageRequest))
         return;
-    QString text = toPlainText(msg.text(g_codecs.codecForContact(msg.sender())));
+    if (isBlocked(msg.sender()))
+        return;
+    // Old ICQ "typed" messages (channel 4) separate their fields with 0xFE.
+    const int type = msg.messageType();
+    if (type == Oscar::MessageType::AuthRequest || type == Oscar::MessageType::AuthGranted
+            || type == Oscar::MessageType::AuthDeny || type == Oscar::MessageType::Added) {
+        const QList<QByteArray> fields = msg.textArray().split(char(0xFE));
+        if (type == Oscar::MessageType::AuthRequest)
+            onAuthRequest(msg.sender(), legacyText(fields.value(5, fields.value(0))));
+        else if (type == Oscar::MessageType::AuthGranted)
+            onAuthReply(msg.sender(), QString(), true);
+        else if (type == Oscar::MessageType::AuthDeny)
+            onAuthReply(msg.sender(), legacyText(fields.value(0)), false);
+        else
+            onContactAddedYou(msg.sender());
+        return;
+    }
+    QString text;
+    if (type == Oscar::MessageType::Url) {
+        const QList<QByteArray> fields = msg.textArray().split(char(0xFE));
+        text = (legacyText(fields.value(0)) + QLatin1Char(' ') + legacyText(fields.value(1))).trimmed();
+    } else {
+        text = toPlainText(msg.text(g_codecs.codecForContact(msg.sender())));
+    }
     if (text.isEmpty())
         return;
     if (msg.hasProperty(Oscar::Message::AutoResponse))
         text = tr("Automatic reply: %1").arg(text);
-    const QDateTime when = msg.timestamp().isValid() ? msg.timestamp() : QDateTime::currentDateTime();
+    const QDateTime now = QDateTime::currentDateTime();
+    const QDateTime when = msg.timestamp().isValid() ? msg.timestamp() : now;
+    // A message stored while we were offline may be delivered again (another
+    // session, or a reconnect before the server deleted it).
+    if (when.secsTo(now) > 60 && m_history.hasIncoming(msg.sender(), text, when, 60))
+        return;
     storeIncoming(msg.sender(), text, when);
 }
 
@@ -767,6 +980,8 @@ void AccountManager::onTypingStopped(const QString &contact)
 
 void AccountManager::onAuthRequest(const QString &contact, const QString &reason)
 {
+    if (isBlocked(contact))
+        return;
     emit authorizationRequested(contact, displayName(contact), reason);
 }
 
@@ -778,6 +993,19 @@ void AccountManager::answerAuthorization(const QString &uin, bool grant)
 
 void AccountManager::onAuthReply(const QString &contact, const QString &, bool granted)
 {
+    // The server clears the "awaiting authorization" flag in the contact
+    // list; reflect it straight away.
+    if (granted && m_client) {
+        const OContact c = m_client->ssiManager()->findContact(Oscar::normalize(contact));
+        if (c) {
+            ContactModel::Item it;
+            it.uin = c.name();
+            it.alias = c.alias();
+            it.group = groupName(c.gid());
+            it.awaitingAuth = false;
+            m_contacts->upsert(it);
+        }
+    }
     emit authorizationAnswered(contact, granted);
 }
 
@@ -799,3 +1027,492 @@ QString AccountManager::presenceName(int presence)
     default: return tr("Offline");
     }
 }
+
+// ---- Phase 2: contact list management -------------------------------------
+
+bool AccountManager::isContact(const QString &uin) const
+{
+    if (!m_client)
+        return false;
+    const OContact c = m_client->ssiManager()->findContact(Oscar::normalize(uin));
+    return c && c.type() == Oscar::ROSTER_CONTACT;
+}
+
+QString AccountManager::groupOf(const QString &uin) const
+{
+    if (!m_client)
+        return QString();
+    const OContact c = m_client->ssiManager()->findContact(Oscar::normalize(uin));
+    return c ? groupName(c.gid()) : QString();
+}
+
+QString AccountManager::aliasOf(const QString &uin) const
+{
+    if (!m_client)
+        return QString();
+    const OContact c = m_client->ssiManager()->findContact(Oscar::normalize(uin));
+    return c ? c.alias() : QString();
+}
+
+int AccountManager::groupSize(const QString &name) const
+{
+    if (!m_client)
+        return 0;
+    int n = 0;
+    for (const OContact &c : m_client->ssiManager()->contactsFromGroup(name))
+        if (c.type() == Oscar::ROSTER_CONTACT)
+            ++n;
+    return n;
+}
+
+bool AccountManager::addContact(const QString &rawUin, const QString &group, const QString &reason)
+{
+    QString uin = rawUin.trimmed();
+    if (!uin.isEmpty() && uin.at(0).isDigit())
+        uin.remove(QRegularExpression(QStringLiteral("[^0-9]")));
+    if (uin.isEmpty() || !isOnline()) {
+        emit contactEditFailed(uin, isOnline() ? tr("Enter an ICQ number or screen name.") : tr("Go online to change your contact list."));
+        return false;
+    }
+    if (normalized(uin) == normalized(m_uin)) {
+        emit contactEditFailed(uin, tr("That is your own number."));
+        return false;
+    }
+    if (isContact(uin)) {
+        emit contactEditFailed(uin, tr("%1 is already in your contact list.").arg(displayName(uin)));
+        return false;
+    }
+    QString target = group.trimmed();
+    if (target.isEmpty())
+        target = m_groups.isEmpty() ? tr("Buddies") : m_groups.first();
+    if (!reason.isNull())
+        m_authReasons.insert(normalized(uin), reason);
+    else
+        m_authReasons.insert(normalized(uin), tr("Please add me to your contact list."));
+    if (!m_client->ssiManager()->findGroup(target)) {
+        m_pendingAdds.append({ uin, target, reason });
+        m_client->addGroup(target);
+        return true;
+    }
+    m_client->addContact(uin, target);
+    return true;
+}
+
+void AccountManager::flushPendingAdds()
+{
+    if (!m_client || m_pendingAdds.isEmpty())
+        return;
+    QVector<PendingAdd> still;
+    for (const PendingAdd &p : m_pendingAdds) {
+        if (m_client->ssiManager()->findGroup(p.group))
+            m_client->addContact(p.uin, p.group);
+        else
+            still.append(p);
+    }
+    m_pendingAdds = still;
+}
+
+void AccountManager::removeContact(const QString &uin)
+{
+    if (!isOnline() || !isContact(uin)) {
+        // Only a conversation: drop it from the list (history stays).
+        if (!isContact(uin))
+            m_contacts->remove(uin);
+        return;
+    }
+    m_client->removeContact(Oscar::normalize(uin));
+}
+
+void AccountManager::renameContact(const QString &uin, const QString &alias)
+{
+    if (isOnline() && isContact(uin))
+        m_client->changeContactAlias(Oscar::normalize(uin), alias.trimmed());
+}
+
+void AccountManager::moveContact(const QString &uin, const QString &group)
+{
+    const QString target = group.trimmed();
+    if (!isOnline() || !isContact(uin) || target.isEmpty() || groupOf(uin) == target)
+        return;
+    if (!m_client->ssiManager()->findGroup(target))
+        m_client->addGroup(target);
+    // changeContactGroup needs the group to exist; it may still be on its way.
+    QTimer *t = new QTimer(this);
+    int *tries = new int(0);
+    const QString key = Oscar::normalize(uin);
+    connect(t, &QTimer::timeout, this, [this, t, tries, key, target]() {
+        if (m_client && m_client->ssiManager()->findGroup(target)) {
+            m_client->changeContactGroup(key, target);
+            t->stop();
+        } else if (++*tries > 40) {
+            t->stop();
+        }
+        if (!t->isActive()) {
+            delete tries;
+            t->deleteLater();
+        }
+    });
+    t->start(250);
+}
+
+bool AccountManager::addGroup(const QString &name)
+{
+    const QString n = name.trimmed();
+    if (!isOnline() || n.isEmpty() || m_client->ssiManager()->findGroup(n))
+        return false;
+    m_client->addGroup(n);
+    return true;
+}
+
+void AccountManager::renameGroup(const QString &oldName, const QString &newName)
+{
+    const QString n = newName.trimmed();
+    if (isOnline() && !n.isEmpty() && n != oldName && m_client->ssiManager()->findGroup(oldName)
+            && !m_client->ssiManager()->findGroup(n))
+        m_client->renameGroup(oldName, n);
+}
+
+bool AccountManager::removeGroup(const QString &name)
+{
+    if (!isOnline() || !m_client->ssiManager()->findGroup(name) || groupSize(name) > 0)
+        return false;
+    m_client->removeGroup(name);
+    return true;
+}
+
+void AccountManager::requestAuthorization(const QString &uin, const QString &reason)
+{
+    if (isOnline())
+        m_client->requestAuth(Oscar::normalize(uin), reason.isEmpty() ? tr("Please add me to your contact list.") : reason);
+}
+
+void AccountManager::onContactEditFailed(const QString &contact, int code)
+{
+    m_authReasons.remove(normalized(contact));
+    QString why;
+    switch (code) {
+    case 0x0C: why = tr("Your contact list is full."); break;
+    case 0x0D: why = tr("ICQ and AIM contacts cannot be mixed in this list."); break;
+    case 0x0E: why = tr("%1 requires authorization.").arg(contact); break;
+    default: why = tr("The server did not accept the change (error %1).").arg(code);
+    }
+    emit contactEditFailed(contact, why);
+}
+
+void AccountManager::onContactAddedYou(const QString &contact)
+{
+    if (!isBlocked(contact))
+        emit contactAddedYou(contact, displayName(contact));
+}
+
+// ---- privacy --------------------------------------------------------------
+
+bool AccountManager::isBlocked(const QString &uin) const
+{
+    const QString key = normalized(uin);
+    for (const QString &b : m_blocked)
+        if (normalized(b) == key)
+            return true;
+    return false;
+}
+
+bool AccountManager::isVisibleTo(const QString &uin) const
+{
+    const QString key = normalized(uin);
+    for (const QString &b : m_visibleTo)
+        if (normalized(b) == key)
+            return true;
+    return false;
+}
+
+bool AccountManager::isInvisibleTo(const QString &uin) const
+{
+    const QString key = normalized(uin);
+    for (const QString &b : m_invisibleTo)
+        if (normalized(b) == key)
+            return true;
+    return false;
+}
+
+void AccountManager::block(const QString &uin)
+{
+    if (!isOnline() || uin.isEmpty() || normalized(uin) == normalized(m_uin))
+        return;
+    const QString key = Oscar::normalize(uin);
+    m_client->setIgnore(key, true);
+    m_client->setInvisibleTo(key, true);
+    // The invisible list only counts in "everyone except" mode.
+    if (m_privacyMode == PrivacyUnknown || m_privacyMode == AllowAll)
+        m_client->setPrivacyTLVs(BlockInvisibleList);
+}
+
+void AccountManager::unblock(const QString &uin)
+{
+    if (!isOnline())
+        return;
+    const QString key = Oscar::normalize(uin);
+    m_client->setIgnore(key, false);
+    m_client->setInvisibleTo(key, false);
+}
+
+void AccountManager::setVisibleTo(const QString &uin, bool visible)
+{
+    if (isOnline())
+        m_client->setVisibleTo(Oscar::normalize(uin), visible);
+}
+
+void AccountManager::setInvisibleTo(const QString &uin, bool invisible)
+{
+    if (isOnline())
+        m_client->setInvisibleTo(Oscar::normalize(uin), invisible);
+}
+
+void AccountManager::setPrivacyMode(int mode)
+{
+    if (isOnline() && mode >= AllowAll && mode <= AllowContactList)
+        m_client->setPrivacyTLVs(Oscar::BYTE(mode));
+}
+
+void AccountManager::setAuthorizationRequired(bool required)
+{
+    if (!isOnline() || !isIcq())
+        return;
+    m_client->setAuthorizationRequired(required);
+    m_authRequired = required ? 1 : 0;
+    emit ownInfoChanged();
+}
+
+// ---- directory ------------------------------------------------------------
+
+void AccountManager::requestUserInfo(const QString &uin)
+{
+    if (!isOnline() || uin.isEmpty())
+        return;
+    if (uin.at(0).isDigit())
+        m_client->requestFullInfo(uin);
+}
+
+void AccountManager::onShortInfo(const QString &contact)
+{
+    if (!m_client)
+        return;
+    const ICQShortInfo i = m_client->getShortInfo(contact);
+    QVariantMap info = m_userInfo.value(normalized(contact));
+    info.insert(QStringLiteral("uin"), contact);
+    info.insert(QStringLiteral("nickname"), legacyText(i.nickname));
+    info.insert(QStringLiteral("firstName"), legacyText(i.firstName));
+    info.insert(QStringLiteral("lastName"), legacyText(i.lastName));
+    info.insert(QStringLiteral("email"), legacyText(i.email));
+    info.insert(QStringLiteral("authRequired"), i.needsAuth.get());
+    m_userInfo.insert(normalized(contact), info);
+    if (normalized(contact) == normalized(m_uin)) {
+        m_nickname = legacyText(i.nickname);
+        m_authRequired = i.needsAuth.get() ? 1 : 0;
+        emit ownInfoChanged();
+    }
+    emit userInfoReceived(contact, info);
+}
+
+void AccountManager::onLongInfo(const QString &contact)
+{
+    if (!m_client)
+        return;
+    const ICQGeneralUserInfo g = m_client->getGeneralInfo(contact);
+    const ICQMoreUserInfo m = m_client->getMoreInfo(contact);
+    const ICQWorkUserInfo w = m_client->getWorkInfo(contact);
+    const ICQNotesInfo n = m_client->getNotesInfo(contact);
+    QVariantMap info;
+    info.insert(QStringLiteral("uin"), contact);
+    info.insert(QStringLiteral("nickname"), legacyText(g.nickName.get()));
+    info.insert(QStringLiteral("firstName"), legacyText(g.firstName.get()));
+    info.insert(QStringLiteral("lastName"), legacyText(g.lastName.get()));
+    info.insert(QStringLiteral("email"), g.publishEmail.get() ? legacyText(g.email.get()) : QString());
+    info.insert(QStringLiteral("city"), legacyText(g.city.get()));
+    info.insert(QStringLiteral("state"), legacyText(g.state.get()));
+    info.insert(QStringLiteral("country"), countryName(int(g.country.get())));
+    info.insert(QStringLiteral("authRequired"), g.needsAuth.get());
+    info.insert(QStringLiteral("webAware"), g.webAware.get());
+    info.insert(QStringLiteral("age"), m.age.get() > 0 && m.age.get() < 130 ? m.age.get() : 0);
+    info.insert(QStringLiteral("gender"), int(m.gender.get())); // 1 female, 2 male
+    info.insert(QStringLiteral("homepage"), legacyText(m.homepage.get()));
+    if (m.birthdayYear.get() > 0 && m.birthdayMonth.get() > 0 && m.birthdayDay.get() > 0)
+        info.insert(QStringLiteral("birthday"), QDate(m.birthdayYear.get(), m.birthdayMonth.get(), m.birthdayDay.get()));
+    info.insert(QStringLiteral("company"), legacyText(w.company.get()));
+    info.insert(QStringLiteral("position"), legacyText(w.position.get()));
+    info.insert(QStringLiteral("about"), legacyText(n.notes.get()));
+    m_userInfo.insert(normalized(contact), info);
+    if (normalized(contact) == normalized(m_uin)) {
+        m_nickname = info.value(QStringLiteral("nickname")).toString();
+        m_authRequired = g.needsAuth.get() ? 1 : 0;
+        emit ownInfoChanged();
+    }
+    emit userInfoReceived(contact, info);
+}
+
+bool AccountManager::startSearch()
+{
+    if (!isOnline() || !isIcq())
+        return false;
+    m_search->clear();
+    m_searching = true;
+    emit searchingChanged();
+    m_searchTimer.start();
+    return true;
+}
+
+void AccountManager::finishSearch()
+{
+    m_searchTimer.stop();
+    if (!m_searching)
+        return;
+    m_searching = false;
+    emit searchingChanged();
+    emit searchFinished(m_search->rowCount());
+}
+
+void AccountManager::clearSearch()
+{
+    finishSearch();
+    m_search->clear();
+}
+
+bool AccountManager::searchByUin(const QString &rawUin)
+{
+    QString uin = rawUin;
+    uin.remove(QRegularExpression(QStringLiteral("[^0-9]")));
+    if (uin.isEmpty() || !startSearch())
+        return false;
+    m_client->uinSearch(uin);
+    return true;
+}
+
+bool AccountManager::searchByNickname(const QString &nickname)
+{
+    if (nickname.trimmed().isEmpty() || !startSearch())
+        return false;
+    ICQWPSearchInfo info;
+    info.nickName = nickname.trimmed().toUtf8();
+    m_client->whitePagesSearch(info);
+    return true;
+}
+
+bool AccountManager::searchByName(const QString &firstName, const QString &lastName)
+{
+    if ((firstName.trimmed().isEmpty() && lastName.trimmed().isEmpty()) || !startSearch())
+        return false;
+    ICQWPSearchInfo info;
+    info.firstName = firstName.trimmed().toUtf8();
+    info.lastName = lastName.trimmed().toUtf8();
+    m_client->whitePagesSearch(info);
+    return true;
+}
+
+bool AccountManager::searchByEmail(const QString &email)
+{
+    if (!email.contains(QLatin1Char('@')) || !startSearch())
+        return false;
+    ICQWPSearchInfo info;
+    info.email = email.trimmed().toUtf8();
+    m_client->whitePagesSearch(info);
+    return true;
+}
+
+void AccountManager::onSearchResult(const ICQSearchResult &r)
+{
+    if (!m_searching || r.uin == 0)
+        return;
+    SearchModel::Item it;
+    it.uin = QString::number(r.uin);
+    it.nickname = legacyText(r.nickName);
+    it.firstName = legacyText(r.firstName);
+    it.lastName = legacyText(r.lastName);
+    it.email = legacyText(r.email);
+    it.online = r.online;
+    it.authRequired = r.auth;
+    it.gender = r.gender == 'F' || r.gender == 1 ? 1 : (r.gender == 'M' || r.gender == 2 ? 2 : 0);
+    it.age = r.age;
+    m_search->add(it);
+    m_searchTimer.start(); // more may follow
+}
+
+void AccountManager::onSearchEnd(int)
+{
+    finishSearch();
+}
+
+// ---- files ----------------------------------------------------------------
+
+QString AccountManager::fileProxyHost() const
+{
+    if (m_profile == QLatin1String("custom"))
+        return m_host;
+    return QString::fromLatin1(kNinaProxyHost);
+}
+
+void AccountManager::setProxyTransfers(bool proxy)
+{
+    if (m_proxyTransfers == proxy)
+        return;
+    m_proxyTransfers = proxy;
+    saveSettings();
+    applyFileSettings();
+    emit proxyTransfersChanged();
+}
+
+void AccountManager::setFileProxyOverride(const QString &host, int port)
+{
+    m_proxyOverrideHost = host;
+    m_proxyOverridePort = port;
+    applyFileSettings();
+}
+
+void AccountManager::applyFileSettings()
+{
+    if (!m_client)
+        return;
+    Oscar::Settings *s = m_client->clientSettings();
+    s->setFileProxy(m_proxyTransfers);
+    s->setFileProxyHost(m_proxyOverrideHost.isEmpty() ? fileProxyHost() : m_proxyOverrideHost);
+    s->setFileProxyPort(m_proxyOverridePort > 0 ? m_proxyOverridePort : 5190);
+    s->setTimeout(15); // seconds per connection attempt
+}
+
+void AccountManager::onIncomingFile(FileTransferHandler *handler)
+{
+    m_transfers->handleIncoming(handler);
+}
+
+qint64 AccountManager::addFileMessage(StoredMessage m)
+{
+    if (m.text.isEmpty())
+        m.text = QStringLiteral("\U0001F4CE ") + m.fileName; // paperclip
+    const bool incoming = !m.outgoing;
+    const bool seen = !incoming || (m_appActive && normalized(m_activeChat) == normalized(m.contact));
+    m.read = seen;
+    m.id = m_history.addMessage(m);
+    if (ChatModel *c = m_chats.value(normalized(m.contact)))
+        c->append(m);
+    if (!m_contacts->contains(m.contact)) {
+        ContactModel::Item it;
+        it.uin = m.contact;
+        m_contacts->upsert(it);
+    }
+    m_contacts->setLastMessage(m.contact, m.text, m.timestamp);
+    if (!seen)
+        m_contacts->setUnread(m.contact, m_history.unreadCount(m.contact));
+    return m.id;
+}
+
+void AccountManager::updateFileMessage(const QString &uin, qint64 id, int state, const QString &path, const QString &url)
+{
+    m_history.updateFile(id, state, path, url);
+    if (ChatModel *c = m_chats.value(normalized(uin)))
+        c->updateFile(id, state, path, url);
+}
+
+void AccountManager::setFileMessageProgress(const QString &uin, qint64 id, qint64 bytes)
+{
+    if (ChatModel *c = m_chats.value(normalized(uin)))
+        c->setFileDone(id, bytes);
+}
+

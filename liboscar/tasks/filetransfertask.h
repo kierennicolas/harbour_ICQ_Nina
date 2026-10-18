@@ -92,6 +92,7 @@ private Q_SLOTS:
 	void doneOft(); //oft told us it's done
 
 private:
+	void handleProxyPacket( const QByteArray &raw ); // harbour_icq_nina
 	enum Action { Send, Receive };
 	void init( Action act );
 	void sendReq();

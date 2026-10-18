@@ -124,6 +124,11 @@ void Connection::taskError( const Oscar::SNAC& s, int errCode )
 	d->client->notifyTaskError( s, errCode, false /*fatal*/ );
 }
 
+void Connection::contactEditError( const QString& name, int code )
+{
+	d->client->notifyContactEditError( name, code );
+}
+
 void Connection::fatalTaskError( const Oscar::SNAC& s, int errCode )
 {
 	d->client->notifyTaskError( s, errCode, true /* fatal */ );
