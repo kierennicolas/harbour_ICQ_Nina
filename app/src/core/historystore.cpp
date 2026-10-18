@@ -32,6 +32,9 @@ bool HistoryStore::open(const QString &path, const QString &account)
         "CREATE TABLE IF NOT EXISTS contacts ("
         " account TEXT NOT NULL, uin TEXT NOT NULL, alias TEXT, grp TEXT,"
         " PRIMARY KEY(account, uin))",
+        "CREATE TABLE IF NOT EXISTS hidden ("
+        " account TEXT NOT NULL, contact TEXT NOT NULL, since INTEGER NOT NULL,"
+        " PRIMARY KEY(account, contact))",
     };
     for (const char *sql : schema) {
         if (!q.exec(QString::fromLatin1(sql))) {
@@ -113,7 +116,13 @@ qint64 HistoryStore::addMessage(const StoredMessage &m)
         qWarning() << "history: insert" << q.lastError().text();
         return 0;
     }
-    return q.lastInsertId().toLongLong();
+    const qint64 id = q.lastInsertId().toLongLong();
+    QSqlQuery unhide(m_db);
+    unhide.prepare(QStringLiteral("DELETE FROM hidden WHERE account = ? AND contact = ?"));
+    unhide.addBindValue(m_account);
+    unhide.addBindValue(m.contact);
+    unhide.exec();
+    return id;
 }
 
 void HistoryStore::setDelivered(qint64 id)
@@ -152,6 +161,18 @@ bool HistoryStore::hasIncoming(const QString &contact, const QString &text, cons
     q.addBindValue(when.toMSecsSinceEpoch() - qint64(toleranceSecs) * 1000);
     q.addBindValue(when.toMSecsSinceEpoch() + qint64(toleranceSecs) * 1000);
     return q.exec() && q.next();
+}
+
+void HistoryStore::hideConversation(const QString &contact)
+{
+    if (!isOpen())
+        return;
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral("INSERT OR REPLACE INTO hidden (account, contact, since) VALUES (?, ?, ?)"));
+    q.addBindValue(m_account);
+    q.addBindValue(contact);
+    q.addBindValue(QDateTime::currentMSecsSinceEpoch());
+    q.exec();
 }
 
 void HistoryStore::deleteConversation(const QString &contact)
@@ -230,7 +251,10 @@ QVector<StoredMessage> HistoryStore::lastMessages() const
     QSqlQuery q(m_db);
     q.prepare(QStringLiteral("SELECT m.contact, m.outgoing, m.text, m.ts FROM messages m"
                              " JOIN (SELECT contact, MAX(id) AS last FROM messages WHERE account = ? GROUP BY contact) l"
-                             " ON m.id = l.last"));
+                             " ON m.id = l.last"
+                             " LEFT JOIN hidden h ON h.account = ? AND h.contact = m.contact"
+                             " WHERE h.contact IS NULL"));
+    q.addBindValue(m_account);
     q.addBindValue(m_account);
     if (!q.exec())
         return out;

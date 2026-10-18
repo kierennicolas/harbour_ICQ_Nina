@@ -261,7 +261,16 @@ void SSIModifyTask::handleContactAck()
 			break;
 		case 0x0002:
 			kWarning( OSCAR_RAW_DEBUG ) << "Item to modify not found in list";
-			setSuccess( 0, QString() );
+			// harbour_icq_nina: when removing, the server not having the item
+			// means it is gone; drop our copy too instead of keeping a contact
+			// that can never be removed.
+			if ( m_opType == Remove )
+				updateContactManager();
+			else
+			{
+				client()->contactEditError( m_newItem ? m_newItem.name() : m_oldItem.name(), ackCode );
+				setSuccess( 0, QString() );
+			}
 			break;
 		case 0x0003:
 			kWarning( OSCAR_RAW_DEBUG ) << "Item already exists in SSI";

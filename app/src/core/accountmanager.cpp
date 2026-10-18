@@ -595,18 +595,17 @@ void AccountManager::onContactRemoved(const QString &contact)
     refreshGroupsAndPrivacy();
     if (m_client && m_client->ssiManager()->findContact(Oscar::normalize(contact)))
         return;
-    if (!m_contacts->contains(contact) || m_contacts->items().isEmpty())
+    if (!m_contacts->contains(contact))
         return;
-    // Keep the conversation (with its history) in the list, outside any group.
-    ContactModel::Item it;
-    it.uin = contact;
+    // Gone from the list. The history stays, and the conversation comes back
+    // if they write again.
+    m_history.hideConversation(contact);
     m_contacts->remove(contact);
-    if (!m_history.messages(contact, 1).isEmpty()) {
-        m_contacts->upsert(it);
-        for (const StoredMessage &last : m_history.lastMessages())
-            if (normalized(last.contact) == normalized(contact))
-                m_contacts->setLastMessage(contact, last.text, last.timestamp);
-    }
+    QVector<StoredContact> cache;
+    for (const ContactModel::Item &i : m_contacts->items())
+        if (!i.group.isEmpty())
+            cache.append({ i.uin, i.alias, i.group });
+    m_history.saveContacts(cache);
 }
 
 void AccountManager::onGroupChanged()
@@ -1144,7 +1143,14 @@ void AccountManager::removeContact(const QString &uin)
             m_contacts->remove(uin);
         return;
     }
-    m_client->removeContact(Oscar::normalize(uin));
+    const QString key = Oscar::normalize(uin);
+    m_client->removeContact(key);
+    // The server answers within a second or two; say so if it did not.
+    QTimer::singleShot(12000, this, [this, uin, key]() {
+        if (isOnline() && isContact(key))
+            emit contactEditFailed(uin, tr("The server did not remove %1 from your contact list. Try again after going offline and online.")
+                                   .arg(displayName(uin)));
+    });
 }
 
 void AccountManager::renameContact(const QString &uin, const QString &alias)

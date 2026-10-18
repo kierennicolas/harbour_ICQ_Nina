@@ -202,6 +202,9 @@ int main(int argc, char **argv)
         {QStringLiteral("ft-proxy-host"), QStringLiteral("Rendezvous proxy host."), QStringLiteral("host")},
         {QStringLiteral("ft-proxy-port"), QStringLiteral("Rendezvous proxy port."), QStringLiteral("port"), QStringLiteral("5190")},
         {QStringLiteral("ft-timeout"), QStringLiteral("Seconds to wait for each file transfer connection."), QStringLiteral("s"), QStringLiteral("10")},
+        {QStringLiteral("add-contact"), QStringLiteral("Add this id to the server-side list (then --remove-contact may remove it)."), QStringLiteral("id")},
+        {QStringLiteral("remove-contact"), QStringLiteral("Remove this id from the server-side list."), QStringLiteral("id")},
+        {QStringLiteral("group"), QStringLiteral("Group for --add-contact (the first group if not given)."), QStringLiteral("name")},
     });
     p.process(app);
 
@@ -308,6 +311,32 @@ int main(int argc, char **argv)
         for (const OContact &c : contacts)
             out(QStringLiteral("  CONTACT %1 alias=\"%2\" gid=%3 awaiting_auth=%4")
                 .arg(who(c.name()), shown(c.alias())).arg(c.gid()).arg(c.waitingAuth() ? "yes" : "no"));
+        if (p.isSet(QStringLiteral("add-contact")) || p.isSet(QStringLiteral("remove-contact"))) {
+            const QString addId = p.value(QStringLiteral("add-contact"));
+            const QString removeId = p.value(QStringLiteral("remove-contact"));
+            QString group = p.value(QStringLiteral("group"));
+            for (const OContact &g : groups)
+                if (group.isEmpty() && !g.name().isEmpty())
+                    group = g.name();
+            if (!addId.isEmpty()) {
+                QTimer::singleShot(2000, [&client, addId, group]() {
+                    out(QStringLiteral("CONTACT-ADD %1 group=\"%2\"").arg(who(addId), shown(group)));
+                    client.addContact(addId, group);
+                });
+            }
+            if (!removeId.isEmpty()) {
+                QTimer::singleShot(addId.isEmpty() ? 2000 : 9000, [&client, removeId]() {
+                    const OContact c = client.ssiManager()->findContact(Oscar::normalize(removeId));
+                    out(QStringLiteral("CONTACT-REMOVE %1 in_list=%2 gid=%3 bid=%4 tlvs=%5")
+                        .arg(who(removeId)).arg(c ? "yes" : "no").arg(c.gid()).arg(c.bid()).arg(c.tlvList().size()));
+                    client.removeContact(removeId);
+                });
+                QTimer::singleShot(addId.isEmpty() ? 9000 : 16000, [&client, removeId]() {
+                    out(QStringLiteral("CONTACT-AFTER-REMOVE %1 in_list=%2")
+                        .arg(who(removeId)).arg(client.ssiManager()->findContact(Oscar::normalize(removeId)) ? "yes" : "no"));
+                });
+            }
+        }
         if (p.isSet(QStringLiteral("info"))) {
             const QString id = p.value(QStringLiteral("info"));
             out(QStringLiteral("INFO-REQUEST %1").arg(who(id)));
@@ -424,6 +453,12 @@ int main(int argc, char **argv)
     });
     QObject::connect(&client, &Client::endOfSearch, [&](int left) {
         out(QStringLiteral("SEARCH-END users_left=%1").arg(left));
+    });
+    QObject::connect(client.ssiManager(), &ContactManager::contactAdded, [&](const OContact &c) {
+        out(QStringLiteral("SSI-CONTACT-ADDED %1 gid=%2 bid=%3 awaiting_auth=%4").arg(who(c.name())).arg(c.gid()).arg(c.bid()).arg(c.waitingAuth() ? "yes" : "no"));
+    });
+    QObject::connect(client.ssiManager(), &ContactManager::contactRemoved, [&](const QString &id) {
+        out(QStringLiteral("SSI-CONTACT-REMOVED %1").arg(who(id)));
     });
     QObject::connect(&client, &Client::contactAddedYou, [&](const QString &id) {
         out(QStringLiteral("ADDED-YOU %1").arg(who(id)));

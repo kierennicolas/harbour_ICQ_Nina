@@ -248,6 +248,17 @@ void TestCore::authorization()
 
     b.setAuthorizationRequired(false);
     QTest::qWait(1000);
+
+    // Removing a contact you have talked to takes them off the list (the
+    // history stays), and they come back when they write again.
+    QVERIFY(a.sendMessage(QStringLiteral("100002"), QStringLiteral("before removing")));
+    QTest::qWait(500);
+    a.removeContact(QStringLiteral("100002"));
+    QVERIFY(waitFor([&] { return !a.isContact(QStringLiteral("100002")); }, 10000));
+    QVERIFY(waitFor([&] { return !a.contacts()->contains(QStringLiteral("100002")); }, 3000));
+    QCOMPARE(a.chat(QStringLiteral("100002"))->rowCount(), 1);
+    QVERIFY(b.sendMessage(QStringLiteral("100001"), QStringLiteral("I am still here")));
+    QVERIFY(waitFor([&] { return a.contacts()->contains(QStringLiteral("100002")); }, 10000));
 }
 
 void TestCore::infoAndSearch()

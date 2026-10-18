@@ -35,7 +35,13 @@ sleep 60
 run --host slogin.oscar.nina.chat --port 5190 --tls --identity icq65 --multiconn 1 --wait 30
 second=$?
 
-# 3. NINA's rendezvous proxy (ARS), which file transfers from a phone rely
+# 3. Contact list editing: add our own number to our list and remove it
+#    again (nobody else is involved), recording NINA's answers.
+sleep 60
+run --host login.oscar.nina.chat --port 5190 --identity icq65 --multiconn 1 --wait 30 \
+    --add-contact "$NINA_UIN" --remove-contact "$NINA_UIN"
+
+# 4. NINA's rendezvous proxy (ARS), which file transfers from a phone rely
 #    on. NINA hands a file offer to yourself back only to the session that
 #    sent it, so a whole transfer needs two accounts; this checks that the
 #    proxy accepts us and assigns a relay port (the offer then times out).
