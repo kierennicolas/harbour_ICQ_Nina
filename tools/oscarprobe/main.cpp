@@ -6,6 +6,8 @@
 // and is never printed. Part of harbour_icq_nina; GPL-3.0-or-later.
 
 #include <QCommandLineParser>
+#include <QLoggingCategory>
+#include <QRegularExpression>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QGuiApplication>
@@ -36,6 +38,43 @@ QString who(const QString &id)
     if (!g_redact || Oscar::normalize(id) == Oscar::normalize(g_self) || id.length() <= 4)
         return id;
     return id.left(2) + QString(id.length() - 4, QLatin1Char('*')) + id.right(2);
+}
+
+// --trace: liboscar's debug output. With --redact only lines that describe
+// packet structure (sizes, channels, families, TLV type names, task steps)
+// are shown, and anything after a TLV name is cut, so no cookies, hashes or
+// texts reach a public log.
+bool g_trace = false;
+QtMessageHandler g_defaultHandler = nullptr;
+void out(const QString &line);
+
+void traceHandler(QtMsgType type, const QMessageLogContext &ctx, const QString &msg)
+{
+    if (!ctx.category || qstrcmp(ctx.category, "liboscar") != 0) {
+        if (g_defaultHandler) g_defaultHandler(type, ctx, msg);
+        return;
+    }
+    QString line = msg.simplified();
+    if (line.isEmpty())
+        return;
+    if (g_redact) {
+        static const QRegularExpression safe(QStringLiteral(
+            "^(Received \\d+ bytes|family: \\d+ subtype: \\d+|channel: \\d+ sequence: \\d+ length: \\d+|"
+            "packet not long enough|packet size is \\d+|message was incomplete|Not enough bytes|"
+            "SEND |RECV |Starting login|Sending the FLAP version|Sending the login cookie|Got the authorization key|"
+            "stage one|stage two|no errors from stage|errors reported|Sending channel 0x04|Clearing all connections|"
+            "Socket open|unknown wire format|start byte is|We should reconnect|Connect to: host|found TLV\\(\\d+\\)|"
+            "error: |after error|emitting finished|Sending client ready|Sending SSI|Requesting|Got |Setting status)"));
+        if (!safe.match(line).hasMatch())
+            return;
+        static const QRegularExpression tlv(QStringLiteral("^(found TLV\\(\\d+\\)( \\[[A-Z ]+\\])?).*$"));
+        line.replace(tlv, QStringLiteral("\\1"));
+        static const QRegularExpression host(QStringLiteral("^Connect to: host .*?(port \\d+ encrypted \\w+).*$"));
+        line.replace(host, QStringLiteral("Connect to: host <server> \\1"));
+        static const QRegularExpression reconnect(QStringLiteral("^We should reconnect.*$"));
+        line.replace(reconnect, QStringLiteral("We should reconnect to the BOS server"));
+    }
+    out(QStringLiteral("TRACE ") + line.left(200));
 }
 
 QString shown(const QString &text, const QString &allowed = QString())
@@ -137,6 +176,7 @@ int main(int argc, char **argv)
         {QStringLiteral("expect-message"), QStringLiteral("Exit with an error unless a message with this text arrives."), QStringLiteral("text")},
         {QStringLiteral("wait"), QStringLiteral("Seconds to stay signed on."), QStringLiteral("s"), QStringLiteral("15")},
         {QStringLiteral("redact"), QStringLiteral("Mask other users' ids and message texts in the output.")},
+        {QStringLiteral("trace"), QStringLiteral("Show liboscar's protocol trace (structure only with --redact).")},
     });
     p.process(app);
 
@@ -155,6 +195,11 @@ int main(int argc, char **argv)
     const QString expect = p.value(QStringLiteral("expect-message"));
     g_redact = p.isSet(QStringLiteral("redact"));
     g_self = uin;
+    g_trace = p.isSet(QStringLiteral("trace"));
+    if (g_trace) {
+        QLoggingCategory::setFilterRules(QStringLiteral("liboscar.debug=true"));
+        g_defaultHandler = qInstallMessageHandler(traceHandler);
+    }
 
     Utf8Codecs codecs;
     static Oscar::ClientVersion version;

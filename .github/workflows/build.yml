@@ -116,5 +116,5 @@ jobs:
           set -o pipefail
           rc=0
           ci/nina-probe.sh build/tools/oscarprobe/oscarprobe 2>&1 | tee nina.log || rc=$?
-          ci/annotate.sh "$([ $rc = 0 ] && echo notice || echo error)" "NINA probe" nina.log 160
+          ci/annotate.sh "$([ $rc = 0 ] && echo notice || echo error)" "NINA probe" nina.log 400
           exit $rc

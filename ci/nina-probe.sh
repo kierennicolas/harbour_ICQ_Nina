@@ -12,7 +12,7 @@ export QT_QPA_PLATFORM=minimal
 
 run() {
   echo "== oscarprobe $*"
-  timeout 120 "$PROBE" --uin "$NINA_UIN" --redact "$@" 2>&1 | grep -v XDG_RUNTIME_DIR
+  timeout 120 "$PROBE" --uin "$NINA_UIN" --redact --trace "$@" 2>&1 | grep -v XDG_RUNTIME_DIR
   local rc=${PIPESTATUS[0]}
   echo "exit=$rc"
   return $rc
@@ -31,7 +31,7 @@ first=$?
 sleep 60
 
 # 2. The same over SSL/TLS.
-run --host slogin.oscar.nina.chat --port 5190 --tls --identity icq65 --wait 15
+run --host slogin.oscar.nina.chat --port 5190 --tls --identity icq65 --wait 30
 second=$?
 
 echo "nina probe: plain=$first tls=$second"
