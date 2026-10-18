@@ -2,6 +2,7 @@
 #include "dbusservice.h"
 
 #include <QDBusConnection>
+#include <QDBusError>
 #include <QDebug>
 
 const char *DBusService::serviceName()
