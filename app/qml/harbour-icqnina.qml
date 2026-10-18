@@ -15,6 +15,12 @@ ApplicationWindow {
                                              : account.messageSound === 2 ? "file://" + account.customSoundFile
                                              : ""
 
+    // A short message over whatever page is open (a transient notification).
+    function showError(text) {
+        var n = errorNotificationComponent.createObject(app, { previewBody: text, body: text })
+        n.publish()
+    }
+
     function playMessageSound() {
         var n = testNotificationComponent.createObject(app)
         n.publish()
@@ -93,6 +99,18 @@ ApplicationWindow {
     }
 
     Component {
+        id: errorNotificationComponent
+        Notification {
+            appName: qsTr("ICQ Nina")
+            appIcon: "/usr/share/icons/hicolor/86x86/apps/harbour-icqnina.png"
+            summary: qsTr("ICQ Nina")
+            previewSummary: qsTr("ICQ Nina")
+            isTransient: true
+            onClosed: destroy()
+        }
+    }
+
+    Component {
         id: testNotificationComponent
         Notification {
             category: "x-nemo.messaging.im"
@@ -132,6 +150,7 @@ ApplicationWindow {
                                                                : qsTr("Did not allow you to add them"))
         }
         onContactAddedYou: app.notify(uin, name, qsTr("Added you to their contact list"))
+        onContactEditFailed: app.showError(message)
     }
 
     Connections {

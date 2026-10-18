@@ -327,8 +327,12 @@ int main(int argc, char **argv)
             if (!removeId.isEmpty()) {
                 QTimer::singleShot(addId.isEmpty() ? 2000 : 9000, [&client, removeId]() {
                     const OContact c = client.ssiManager()->findContact(Oscar::normalize(removeId));
-                    out(QStringLiteral("CONTACT-REMOVE %1 in_list=%2 gid=%3 bid=%4 tlvs=%5")
-                        .arg(who(removeId)).arg(c ? "yes" : "no").arg(c.gid()).arg(c.bid()).arg(c.tlvList().size()));
+                    QStringList types;
+                    for (const Oscar::TLV &t : c.tlvList())
+                        types << QStringLiteral("0x%1(%2)").arg(t.type, 4, 16, QLatin1Char('0')).arg(t.length);
+                    out(QStringLiteral("CONTACT-REMOVE %1 in_list=%2 gid=%3 bid=%4 type=%5 tlvs=[%6]")
+                        .arg(who(removeId)).arg(c ? "yes" : "no").arg(c.gid()).arg(c.bid()).arg(c.type())
+                        .arg(types.join(QLatin1Char(' '))));
                     client.removeContact(removeId);
                 });
                 QTimer::singleShot(addId.isEmpty() ? 9000 : 16000, [&client, removeId]() {

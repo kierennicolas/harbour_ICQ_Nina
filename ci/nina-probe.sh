@@ -71,5 +71,12 @@ else
   echo "FT-RESULT proxy skipped (no proxy host resolves)"
 fi
 
+# 5. Diagnostics requested with "Run workflow" (input nina_args).
+if [ -n "${NINA_EXTRA:-}" ]; then
+  read -r -a extra <<< "$NINA_EXTRA"
+  sleep 60
+  run --host login.oscar.nina.chat --port 5190 --identity icq65 --multiconn 1 --wait 30 "${extra[@]}"
+fi
+
 echo "nina probe: plain=$first tls=$second ft_proxy=$proxy_rc"
 exit $first

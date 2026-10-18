@@ -9,6 +9,8 @@ Page {
     allowedOrientations: Orientation.All
 
     property bool askedForAccount: false
+
+    RemorsePopup { id: removeRemorse }
     property int tick: 0 // re-evaluates the countdown text once a second
 
     function connectionText() {
@@ -104,7 +106,6 @@ Page {
             onClicked: pageStack.push(Qt.resolvedUrl("ConversationPage.qml"), { uin: model.uin })
             menu: contactMenu
 
-            RemorseItem { id: remorse }
 
             Component {
                 id: contactMenu
@@ -151,7 +152,9 @@ Page {
                         onClicked: {
                             var uin = model.uin
                             var wasListed = listed
-                            remorse.execute(item, wasListed ? qsTr("Removing") : qsTr("Deleting"), function() {
+                            var who = model.name
+                            // A page-level remorse: list updates must not cancel the removal.
+                            removeRemorse.execute(wasListed ? qsTr("Removing %1").arg(who) : qsTr("Deleting conversation with %1").arg(who), function() {
                                 if (wasListed)
                                     account.removeContact(uin)
                                 else

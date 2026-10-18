@@ -6,6 +6,11 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      nina_args:
+        description: 'Extra oscarprobe options for one more NINA sign-on (diagnostics), e.g. --remove-contact 1'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -189,6 +194,7 @@ jobs:
     env:
       NINA_UIN: ${{ secrets.NINA_UIN }}
       NINA_PASSWORD: ${{ secrets.NINA_PASSWORD }}
+      NINA_EXTRA: ${{ github.event.inputs.nina_args }}
     steps:
       - uses: actions/checkout@v5
       - name: Check that the account secrets exist
