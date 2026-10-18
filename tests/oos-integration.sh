@@ -2,10 +2,11 @@
 # Integration tests for liboscar/oscarprobe against a local Open OSCAR Server
 # (https://github.com/mk6i/open-oscar-server, MIT) with real password checks.
 #
-# usage: tests/oos-integration.sh <path to oscarprobe> <path to open_oscar_server>
+# usage: tests/oos-integration.sh <oscarprobe> <open_oscar_server> [tst_core]
 set -uo pipefail
 PROBE=$(readlink -f "$1")
 OOS=$(readlink -f "$2")
+CORE_TEST=${3:+$(readlink -f "$3")}
 WORK=$(mktemp -d)
 LOG="$WORK/server.log"
 fails=0
@@ -66,6 +67,13 @@ pause
 echo "== status: sign on as away"
 out=$(probe 100002 pw100002 --wait 3 --status away); echo "$out"
 echo "$out" | grep -q 'LOGIN ok' && pass "sign-on with away status" || fail "away sign-on"
+
+if [ -n "$CORE_TEST" ]; then
+  pause; pause
+  echo "== app core (AccountManager) against the server"
+  if QT_QPA_PLATFORM=minimal OSCAR_TEST_HOST=127.0.0.1 timeout 180 "$CORE_TEST" 2>&1 | grep -v XDG_RUNTIME_DIR; then
+    pass "app core tests"; else fail "app core tests"; fi
+fi
 
 echo
 grep -E 'level=(ERROR|WARN)' "$LOG" | head -20

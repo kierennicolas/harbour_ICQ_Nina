@@ -480,6 +480,12 @@ void Client::startStageTwo()
 
 }
 
+void Client::requestOwnInfo()
+{
+	if ( d->active && d->ownStatusTask )
+		d->ownStatusTask->go();
+}
+
 void Client::serviceSetupFinished()
 {
 	d->active = true;

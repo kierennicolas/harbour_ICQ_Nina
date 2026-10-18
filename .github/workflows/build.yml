@@ -3,6 +3,7 @@ name: Build and test
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -23,8 +24,8 @@ jobs:
       - name: Install Qt 5
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q qtbase5-dev qt5-qmake
-      - name: Build liboscar and oscarprobe
+          sudo apt-get install -y -q qtbase5-dev qt5-qmake qtdeclarative5-dev libqt5sql5-sqlite
+      - name: Build liboscar, oscarprobe and the core tests
         run: |
           mkdir -p build && cd build
           qmake ../harbour_icq_nina.pro && make -j"$(nproc)"
@@ -37,7 +38,8 @@ jobs:
           set -o pipefail
           rc=0
           tests/oos-integration.sh build/tools/oscarprobe/oscarprobe \
-            "open_oscar_server.$OOS_VERSION.linux.x86_64/open_oscar_server" 2>&1 | tee integration.log || rc=$?
+            "open_oscar_server.$OOS_VERSION.linux.x86_64/open_oscar_server" \
+            build/tests/core/tst_core 2>&1 | tee integration.log || rc=$?
           ci/annotate.sh "$([ $rc = 0 ] && echo notice || echo error)" "Integration tests" integration.log 120
           exit $rc
 
@@ -81,6 +83,92 @@ jobs:
           ci/annotate.sh "$([ $rc = 0 ] && echo notice || echo error)" "Sailfish build" sfos.log 80
           exit $rc
 
+  rpm:
+    name: App RPM (${{ matrix.arch }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: armv7hl   # Xperia XA2 and other 32-bit devices
+            image: coderus/sailfishos-platform-sdk-armv7hl
+          - arch: aarch64   # 64-bit images (Xperia 10 II and newer)
+            image: coderus/sailfishos-platform-sdk
+    env:
+      SDK_IMAGE: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Free disk space for the SDK image
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: Pull Sailfish SDK
+        run: docker pull "$SDK_IMAGE:$SFOS_RELEASE"
+      - name: Build RPM
+        id: build
+        run: |
+          set -o pipefail
+          mkdir -p RPMS && chmod a+rwx RPMS
+          if ! docker run --rm --privileged -e SFOS_RELEASE -e SFOS_ARCH=${{ matrix.arch }} \
+              -v "$GITHUB_WORKSPACE:/workspace" "$SDK_IMAGE:$SFOS_RELEASE" \
+              /bin/bash /workspace/ci/sfos-rpm.sh 2>&1 | tee rpm.log; then
+            ci/annotate.sh error "RPM build log" rpm.log 160
+            exit 1
+          fi
+          ls -l RPMS
+      - uses: actions/upload-artifact@v6
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        with:
+          name: harbour-icqnina-${{ matrix.arch }}
+          path: RPMS/harbour-icqnina-[0-9]*.${{ matrix.arch }}.rpm
+          if-no-files-found: error
+      - name: Harbour RPM validator
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          rc=0
+          docker run --rm --privileged -e SFOS_RELEASE -e SFOS_ARCH=${{ matrix.arch }} \
+            -v "$GITHUB_WORKSPACE:/workspace" "$SDK_IMAGE:$SFOS_RELEASE" \
+            /bin/bash /workspace/ci/sfos-validate.sh 2>&1 | tee validate.log || rc=$?
+          ci/annotate.sh "$([ $rc = 0 ] && echo notice || echo error)" "Harbour validator ${{ matrix.arch }}" validate.log 200
+          exit $rc
+      - name: Install on Sailfish OS and load every page with real Silica
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && matrix.arch == 'armv7hl' }}
+        run: |
+          set -o pipefail
+          rc=0
+          docker run --rm --privileged -e SFOS_RELEASE -e SFOS_ARCH=${{ matrix.arch }} \
+            -v "$GITHUB_WORKSPACE:/workspace" "$SDK_IMAGE:$SFOS_RELEASE" \
+            /bin/bash /workspace/ci/sfos-qml-check.sh 2>&1 | tee qml.log || rc=$?
+          ci/annotate.sh "$([ $rc = 0 ] && echo notice || echo error)" "QML check" qml.log 200
+          exit $rc
+
+  release:
+    name: GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [desktop, rpm]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cat > notes.md <<EOF
+          **Sony Xperia XA2 (and other 32-bit devices): download the \`armv7hl\` RPM.** The \`aarch64\` RPM is for 64-bit images.
+          Built against Sailfish OS ${SFOS_RELEASE}; installs on that release and later. Unofficial; not affiliated with NINA, ICQ or AOL.
+          EOF
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.rpm --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" dist/*.rpm --repo "$GITHUB_REPOSITORY" --title "ICQ Nina ${TAG#v}" --notes-file notes.md
+          fi
+
   nina:
     name: Live sign-on probe against NINA
     runs-on: ubuntu-24.04
@@ -89,7 +177,7 @@ jobs:
     concurrency:
       group: nina-probe
       cancel-in-progress: false
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/tags/')
     env:
       NINA_UIN: ${{ secrets.NINA_UIN }}
       NINA_PASSWORD: ${{ secrets.NINA_PASSWORD }}
@@ -104,7 +192,7 @@ jobs:
         if: steps.secrets.outputs.ok == 'true'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q qtbase5-dev qt5-qmake
+          sudo apt-get install -y -q qtbase5-dev qt5-qmake qtdeclarative5-dev libqt5sql5-sqlite
       - name: Build oscarprobe
         if: steps.secrets.outputs.ok == 'true'
         run: |

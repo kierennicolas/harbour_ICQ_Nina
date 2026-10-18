@@ -23,7 +23,7 @@ TAG="oscarprobe self-test $(date -u +%H%M%S)"
 # 1. Plain OSCAR, ICQ 6.5 identity, stay on long enough to see presence and
 #    the contact list, and send ourselves a message (NINA allows several
 #    sessions, so it may be echoed back).
-run --host login.oscar.nina.chat --port 5190 --identity icq65 --wait 45 \
+run --host login.oscar.nina.chat --port 5190 --identity icq65 --multiconn 1 --wait 45 \
     --to "$NINA_UIN" --message "$TAG" --send-delay 5
 first=$?
 
@@ -31,7 +31,7 @@ first=$?
 sleep 60
 
 # 2. The same over SSL/TLS.
-run --host slogin.oscar.nina.chat --port 5190 --tls --identity icq65 --wait 30
+run --host slogin.oscar.nina.chat --port 5190 --tls --identity icq65 --multiconn 1 --wait 30
 second=$?
 
 echo "nina probe: plain=$first tls=$second"

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+X-Nemo-Application-Type=silica-qt5
+Name=ICQ Nina
+Comment=ICQ and AIM messaging on the NINA service
+Icon=harbour-icqnina
+Exec=harbour-icqnina
+Categories=Network;InstantMessaging;
+
+[X-Sailjail]
+OrganizationName=io.github.kierennicolas
+ApplicationName=icqnina
+Permissions=Internet

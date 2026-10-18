@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0.15" y1="0.05" x2="0.85" y2="0.95">
+      <stop offset="0" stop-color="#2fd18a"/>
+      <stop offset="0.55" stop-color="#169e7c"/>
+      <stop offset="1" stop-color="#0c6a63"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- rounded tile -->
+  <rect x="12" y="12" width="232" height="232" rx="58" fill="url(#bg)"/>
+  <rect x="12" y="12" width="232" height="232" rx="58" fill="url(#shine)"/>
+  <!-- speech bubble with a tail, like an old pager chat window -->
+  <path d="M70 62 H186 A28 28 0 0 1 214 90 V150 A28 28 0 0 1 186 178 H118 L82 206 L88 178 H70 A28 28 0 0 1 42 150 V90 A28 28 0 0 1 70 62 Z"
+        fill="#ffffff"/>
+  <!-- the number sign: everyone on ICQ is a number -->
+  <g stroke="#127f6b" stroke-width="13" stroke-linecap="round">
+    <line x1="114" y1="84" x2="104" y2="158"/>
+    <line x1="150" y1="84" x2="140" y2="158"/>
+    <line x1="88" y1="106" x2="170" y2="106"/>
+    <line x1="84" y1="136" x2="166" y2="136"/>
+  </g>
+  <!-- online dot -->
+  <circle cx="196" cy="70" r="26" fill="#ffb22e" stroke="#ffffff" stroke-width="8"/>
+</svg>

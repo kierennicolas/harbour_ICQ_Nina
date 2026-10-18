@@ -38,4 +38,5 @@ header before reusing a file on its own.
 - Optional sign-on variants in `Oscar::Settings` (all off by default): the
   strong BUCP password hash with TLV 0x4C, TLVs 0x4B/0x5A in the key request,
   and the multi-session TLV 0x4A for ICQ as well as AIM.
+- `Client::requestOwnInfo()` (SNAC 01/0E), used by the app as a liveness check.
 - `CMakeLists.txt` files removed.

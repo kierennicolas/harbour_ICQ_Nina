@@ -413,6 +413,10 @@ public:
 	 */
 	void debug( const QString &str );
 
+	/** harbour_icq_nina: ask the server for our own user info (SNAC 01/0E).
+	 * The reply raises haveOwnInfo(), so this doubles as a liveness check. */
+	void requestOwnInfo();
+
 	/** Have we logged in yet? */
 	bool isActive() const;
 

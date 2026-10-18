@@ -11,11 +11,14 @@ SB2="sb2 -t $TARGET"
 SRC="$HOME/src"
 rm -rf "$SRC" && mkdir -p "$SRC"
 tar -C /workspace --exclude=./.git -cf - . | tar -C "$SRC" -xf -
-mkdir -p "$SRC/build" && cd "$SRC/build"
-
-echo "::group::Build for $TARGET"
-$SB2 qmake ../harbour_icq_nina.pro && $SB2 make -j"$(nproc)" || { echo "::error::Sailfish build failed"; exit 1; }
+echo "::group::Build liboscar and oscarprobe for $TARGET"
+mkdir -p "$SRC/build/liboscar" "$SRC/build/tools/oscarprobe"
+(cd "$SRC/build/liboscar" && $SB2 qmake ../../liboscar/liboscar.pro && $SB2 make -j"$(nproc)") \
+  || { echo "::error::liboscar build failed"; exit 1; }
+(cd "$SRC/build/tools/oscarprobe" && $SB2 qmake ../../../tools/oscarprobe/oscarprobe.pro && $SB2 make -j"$(nproc)") \
+  || { echo "::error::oscarprobe build failed"; exit 1; }
 echo "::endgroup::"
+cd "$SRC/build"
 file liboscar/liboscar.so.1.0.0 tools/oscarprobe/oscarprobe
 
 PROBE="$SRC/build/tools/oscarprobe/oscarprobe"

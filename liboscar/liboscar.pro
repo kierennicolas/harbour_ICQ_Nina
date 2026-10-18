@@ -185,6 +185,8 @@ HEADERS += \
 
 DISTFILES += COPYING COPYING.LIB COPYING.kopete DESIGN HACKING TODO README.md utils/rtf.ll
 
+# In the app's RPM the library is private to the app (Harbour rule).
+sailfishapp_build: LIBDIR = /usr/share/harbour-icqnina/lib
 isEmpty(LIBDIR): LIBDIR = /usr/lib
 target.path = $$LIBDIR
 INSTALLS += target
