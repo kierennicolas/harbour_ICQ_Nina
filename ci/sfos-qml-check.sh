@@ -57,7 +57,16 @@ $SB2 qmake ../qmlcheck.pro && $SB2 make -j"$(nproc)" || { echo "::error::qmlchec
 echo "::endgroup::"
 
 mkdir -p /tmp/xdg && chmod 700 /tmp/xdg
-$SB2 /bin/sh -c 'XDG_RUNTIME_DIR=/tmp/xdg QT_QPA_PLATFORM=minimal QV4_FORCE_INTERPRETER=1 ./qmlcheck "$1"' _ "$APPQML" \
-  || problems=$((problems + 1))
+$SB2 /bin/sh -c 'XDG_RUNTIME_DIR=/tmp/xdg QT_QPA_PLATFORM=minimal QV4_FORCE_INTERPRETER=1 ./qmlcheck "$1" 2>&1' _ "$APPQML" \
+  > "$HOME/qmlcheck.log"
+rc=$?
+cat "$HOME/qmlcheck.log"
+[ $rc -eq 0 ] || problems=$((problems + 1))
+# The app's own warnings drown in Silica's noise (no real window here), so
+# raise each one as its own annotation.
+grep -E '^\[APP-QML\]' "$HOME/qmlcheck.log" | head -20 | sed -e 's/%/%25/g' | while IFS= read -r line; do
+  echo "::error title=App QML::${line#\[APP-QML\] }"
+done
+grep -E '^(CREATED|compiled|qmlcheck:)' "$HOME/qmlcheck.log" | sed ':a;N;$!ba;s/\n/%0A/g' | sed 's/^/::notice title=QML pages::/'
 echo "qml check: $problems problem(s)"
 [ $problems -eq 0 ]
