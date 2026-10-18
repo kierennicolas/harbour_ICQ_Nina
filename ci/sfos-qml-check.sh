@@ -25,7 +25,8 @@ $SB2 -m sdk-install -R zypper --non-interactive install $deps nemo-qml-plugin-no
 has_pickers() { $SB2 test -e /usr/lib/qt5/qml/Sailfish/Pickers/qmldir || $SB2 test -e /usr/lib64/qt5/qml/Sailfish/Pickers/qmldir; }
 has_pickers || $SB2 -m sdk-install -R zypper --non-interactive install sailfish-components-pickers-qt5 \
   || $SB2 -m sdk-install -R zypper --non-interactive search 'sailfish-components-pickers*'
-has_pickers || { echo "::error::Sailfish.Pickers is not available in $TARGET"; problems=$((problems + 1)); }
+if has_pickers; then echo "::notice title=Sailfish.Pickers::available in $TARGET"
+else echo "::error::Sailfish.Pickers is not available in $TARGET"; problems=$((problems + 1)); fi
 mkdir -p "$HOME/rpm-in" && cp "${rpms[0]}" "$HOME/rpm-in/"
 if ! $SB2 -m sdk-install -R rpm -Uvh --force "$HOME/rpm-in/${rpms[0]##*/}"; then
   echo "::error::The RPM does not install on $TARGET"
@@ -46,9 +47,12 @@ fi
 if [ -z "$(find_icon icon-m-back)" ]; then
   echo "No theme icons in this SDK target; skipping."
 else
+  found="" missing=""
   for icon in $(grep -rhoE 'image://theme/[A-Za-z0-9_-]+' /workspace/app/qml | sed 's#image://theme/##' | sort -u); do
-    if [ -n "$(find_icon "$icon")" ]; then echo "OK      $icon"; else echo "MISSING $icon"; problems=$((problems + 1)); fi
+    if [ -n "$(find_icon "$icon")" ]; then echo "OK      $icon"; found="$found $icon"
+    else echo "MISSING $icon"; missing="$missing $icon"; problems=$((problems + 1)); fi
   done
+  echo "::notice title=Theme icons::found:${found:- none}; missing:${missing:- none}"
 fi
 echo "::endgroup::"
 
