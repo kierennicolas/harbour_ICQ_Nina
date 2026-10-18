@@ -1,10 +1,12 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
+import Sailfish.Pickers 1.0
 import "../components"
 import "../components/Presence.js" as Presence
 
 Page {
     id: page
+    objectName: "conversation"
     allowedOrientations: Orientation.All
 
     property string uin
@@ -14,11 +16,15 @@ Page {
     property int presence: Presence.Offline
     property bool typing: false
     property string name: uin
+    property bool blocked: false
+    // A file picked in the picker, waiting for the picker to close.
+    property var pickedFile: null
 
     function refreshContact() {
         presence = account.contacts.presenceOf(uin)
         typing = account.contacts.isTyping(uin)
         name = account.displayName(uin)
+        blocked = account.isBlocked(uin)
     }
 
     function send() {
@@ -39,6 +45,26 @@ Page {
         }
     }
 
+    function pickFile() {
+        pageStack.push(filePicker)
+    }
+
+    function showInfo(text) {
+        infoLabel.text = text
+        infoTimer.restart()
+    }
+
+    function offerPickedFile() {
+        var f = pickedFile
+        pickedFile = null
+        if (!f || !f.filePath)
+            return
+        var d = pageStack.push(Qt.resolvedUrl("SendFileDialog.qml"), {
+            uin: uin, name: name, filePath: f.filePath, fileName: f.fileName || f.filePath.split("/").pop(),
+            fileSize: f.fileSize || 0, contactOnline: presence !== Presence.Offline })
+        d.failed.connect(function(message) { page.showInfo(message) })
+    }
+
     Component.onCompleted: refreshContact()
 
     onStatusChanged: {
@@ -46,9 +72,26 @@ Page {
             account.activeChat = uin
             app.clearNotification(uin)
             messages.positionViewAtEnd()
+            if (pickedFile)
+                offerPickedFile()
         } else if (status === PageStatus.Deactivating && account.activeChat === uin) {
             account.activeChat = ""
             stopTyping()
+        }
+    }
+
+    Component {
+        id: filePicker
+        FilePickerPage {
+            title: qsTr("Send file")
+            onSelectedContentPropertiesChanged: {
+                if (selectedContentProperties && selectedContentProperties.filePath)
+                    page.pickedFile = {
+                        filePath: selectedContentProperties.filePath,
+                        fileName: selectedContentProperties.fileName,
+                        fileSize: selectedContentProperties.fileSize
+                    }
+            }
         }
     }
 
@@ -62,12 +105,19 @@ Page {
     Connections {
         target: account
         onMessageFailed: if (uin === page.uin) failedLabel.visible = true
+        onPrivacyChanged: page.refreshContact()
     }
 
     Timer {
         id: typingTimer
         interval: 5000
         onTriggered: page.stopTyping()
+    }
+
+    Timer {
+        id: infoTimer
+        interval: 4000
+        onTriggered: infoLabel.text = ""
     }
 
     SilicaListView {
@@ -80,6 +130,18 @@ Page {
         }
         clip: true
         model: page.chat
+
+        PullDownMenu {
+            MenuItem {
+                text: qsTr("Contact details")
+                onClicked: pageStack.push(Qt.resolvedUrl("ContactInfoPage.qml"), { uin: page.uin })
+            }
+            MenuItem {
+                visible: account.state === 2 && !page.blocked
+                text: qsTr("Send file")
+                onClicked: page.pickFile()
+            }
+        }
 
         header: PageHeader {
             title: page.name
@@ -102,10 +164,11 @@ Page {
         delegate: Item {
             id: row
             width: messages.width
-            height: bubble.height + Theme.paddingSmall
+            height: (model.kind === 1 ? fileBubble.height : bubble.height) + Theme.paddingSmall
 
             Rectangle {
                 id: bubble
+                visible: model.kind !== 1
                 readonly property real maxWidth: row.width * 0.8
                 anchors {
                     right: model.outgoing ? parent.right : undefined
@@ -144,6 +207,30 @@ Page {
                           + (model.outgoing ? (model.delivered ? " ✓" : " …") : "")
                 }
             }
+
+            FileBubble {
+                id: fileBubble
+                visible: model.kind === 1
+                anchors {
+                    right: model.outgoing ? parent.right : undefined
+                    left: model.outgoing ? undefined : parent.left
+                    rightMargin: Theme.horizontalPageMargin
+                    leftMargin: Theme.horizontalPageMargin
+                }
+                maxWidth: row.width * 0.85
+                outgoing: model.outgoing
+                fileName: model.fileName || ""
+                fileSize: model.fileSize || 0
+                fileState: model.fileState || 0
+                fileDone: model.fileDone || 0
+                filePath: model.filePath || ""
+                fileUrl: model.fileUrl || ""
+                transferId: model.transferId || ""
+                timestamp: model.timestamp
+                contact: page.uin
+                contactName: page.name
+                onMessage: page.showInfo(text)
+            }
         }
 
         onCountChanged: positionViewAtEnd()
@@ -167,6 +254,16 @@ Page {
         }
 
         Label {
+            id: infoLabel
+            visible: text.length > 0
+            x: Theme.horizontalPageMargin
+            width: parent.width - 2 * x
+            wrapMode: Text.Wrap
+            color: Theme.highlightColor
+            font.pixelSize: Theme.fontSizeExtraSmall
+        }
+
+        Label {
             id: failedLabel
             visible: false
             x: Theme.horizontalPageMargin
@@ -178,7 +275,17 @@ Page {
         }
 
         Label {
-            visible: account.contacts.contains(page.uin) && page.presence === Presence.Offline && account.state === 2
+            visible: page.blocked
+            x: Theme.horizontalPageMargin
+            width: parent.width - 2 * x
+            wrapMode: Text.Wrap
+            color: Theme.secondaryHighlightColor
+            font.pixelSize: Theme.fontSizeExtraSmall
+            text: qsTr("You blocked %1. Unblock them from their contact details.").arg(page.name)
+        }
+
+        Label {
+            visible: !page.blocked && account.contacts.contains(page.uin) && page.presence === Presence.Offline && account.state === 2
             x: Theme.horizontalPageMargin
             width: parent.width - 2 * x
             wrapMode: Text.Wrap
@@ -191,10 +298,23 @@ Page {
             width: parent.width
             height: Math.max(input.height, sendButton.height)
 
+            IconButton {
+                id: attachButton
+                anchors {
+                    left: parent.left
+                    leftMargin: Theme.paddingSmall
+                    bottom: parent.bottom
+                    bottomMargin: Theme.paddingMedium
+                }
+                icon.source: "image://theme/icon-m-attach"
+                enabled: account.state === 2 && !page.blocked
+                onClicked: page.pickFile()
+            }
+
             TextArea {
                 id: input
                 anchors {
-                    left: parent.left
+                    left: attachButton.right
                     right: sendButton.left
                     bottom: parent.bottom
                 }

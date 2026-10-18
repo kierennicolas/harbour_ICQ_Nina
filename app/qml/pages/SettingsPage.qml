@@ -53,6 +53,48 @@ Page {
                 }
             }
 
+            SectionHeader { text: qsTr("Contacts") }
+
+            BackgroundItem {
+                width: parent.width
+                height: Theme.itemSizeSmall
+                onClicked: pageStack.push(Qt.resolvedUrl("PrivacyPage.qml"))
+                Label {
+                    x: Theme.horizontalPageMargin
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: parent.highlighted ? Theme.highlightColor : Theme.primaryColor
+                    text: account.blockedContacts.length > 0
+                          ? qsTr("Privacy and blocking (%n blocked)", "", account.blockedContacts.length)
+                          : qsTr("Privacy and blocking")
+                }
+            }
+            BackgroundItem {
+                width: parent.width
+                height: Theme.itemSizeSmall
+                onClicked: pageStack.push(Qt.resolvedUrl("GroupsPage.qml"))
+                Label {
+                    x: Theme.horizontalPageMargin
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: parent.highlighted ? Theme.highlightColor : Theme.primaryColor
+                    text: qsTr("Groups")
+                }
+            }
+
+            SectionHeader { text: qsTr("Files") }
+
+            TextSwitch {
+                checked: account.proxyTransfers
+                automaticCheck: false
+                onClicked: account.proxyTransfers = !account.proxyTransfers
+                text: qsTr("Send files through the server's relay")
+                description: qsTr("Uses the rendezvous proxy (%1) from the start. Phones are rarely reachable directly, so this is the reliable choice; turn it off to try a direct connection first, for example on the same Wi-Fi.").arg(account.fileProxyHost)
+            }
+
+            DetailItem {
+                label: qsTr("Received files")
+                value: account.transfers.downloadDir
+            }
+
             SectionHeader { text: qsTr("Connection") }
 
             TextSwitch {

@@ -73,7 +73,7 @@ void traceHandler(QtMsgType type, const QMessageLogContext &ctx, const QString &
             "Socket open|unknown wire format|start byte is|We should reconnect|Connect to: host|found TLV\\(\\d+\\)|"
             "error: |after error|emitting finished|Sending client ready|Sending SSI|Requesting|Got |Setting status|"
             "Offline messages delivered|Server does not retrieve offline|No reply to 04/10|End of ICQ offline messages|"
-            "Ignoring offline message|ignoring our own proposal|proxy requested|redirect or proxy request|"
+            "Ignoring offline message|ignoring our own proposal|proxy requested|redirect or proxy request|got port|"
             "other user (cancelled|acceptetd)|listening for connections|listening failed|connection failed somehow|"
             "socket error|Received (basic|work|more|notes|email|interest|organization|short)|"
             "Can't add item|SSI Update successful|Acknowledgement code)"));

@@ -13,6 +13,8 @@
 #include "chatmodel.h"
 #include "contactmodel.h"
 #include "dbusservice.h"
+#include "searchmodel.h"
+#include "transfermanager.h"
 
 int main(int argc, char *argv[])
 {
@@ -22,6 +24,8 @@ int main(int argc, char *argv[])
     qmlRegisterUncreatableType<AccountManager>("harbour.icqnina", 1, 0, "Account", QStringLiteral("use the account context property"));
     qmlRegisterUncreatableType<ContactModel>("harbour.icqnina", 1, 0, "ContactModel", QStringLiteral("from account.contacts"));
     qmlRegisterUncreatableType<ChatModel>("harbour.icqnina", 1, 0, "ChatModel", QStringLiteral("from account.chat()"));
+    qmlRegisterUncreatableType<SearchModel>("harbour.icqnina", 1, 0, "SearchModel", QStringLiteral("from account.searchResults"));
+    qmlRegisterUncreatableType<TransferManager>("harbour.icqnina", 1, 0, "Transfers", QStringLiteral("from account.transfers"));
 
     // Under Sailjail these resolve to the app's own folders.
     const QString configDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);

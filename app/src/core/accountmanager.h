@@ -152,6 +152,8 @@ public:
     Q_INVOKABLE ChatModel *chat(const QString &uin);
     Q_INVOKABLE bool sendMessage(const QString &uin, const QString &text);
     Q_INVOKABLE void markRead(const QString &uin);
+    // Deletes the history with someone who is not in the contact list.
+    Q_INVOKABLE void deleteConversation(const QString &uin);
     Q_INVOKABLE void setTyping(const QString &uin, bool typing);
     Q_INVOKABLE void answerAuthorization(const QString &uin, bool grant);
     Q_INVOKABLE QString displayName(const QString &uin) const;

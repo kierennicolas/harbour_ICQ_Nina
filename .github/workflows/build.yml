@@ -212,7 +212,7 @@ jobs:
           set -o pipefail
           rc=0
           ci/nina-probe.sh build/tools/oscarprobe/oscarprobe 2>&1 | tee nina.log || rc=$?
-          grep -E 'CONFIG|LOGIN|OWN-INFO|CONTACT-LIST|INFO-|SEARCH-|DNS |PROXY-HOST|FT-|RESULT|TASK-ERROR|SOCKET-ERROR|nina probe|== |TRACE .*(ffline|04/10|proxy|listening|socket error|other user|own proposal|Received (basic|more|short))' nina.log > nina-summary.log || true
+          grep -E 'CONFIG|LOGIN|OWN-INFO|CONTACT-LIST|INFO-|SEARCH-|DNS |PROXY-HOST|FT-|RESULT|TASK-ERROR|SOCKET-ERROR|nina probe|== |TRACE .*(ffline|04/10|proxy|got port|listening|socket error|other user|own proposal|Received (basic|more|short))' nina.log > nina-summary.log || true
           ci/annotate.sh "$([ $rc = 0 ] && echo notice || echo error)" "NINA summary" nina-summary.log 240
           ci/annotate.sh "$([ $rc = 0 ] && echo notice || echo error)" "NINA probe" nina.log 120
           exit $rc

@@ -154,6 +154,17 @@ bool HistoryStore::hasIncoming(const QString &contact, const QString &text, cons
     return q.exec() && q.next();
 }
 
+void HistoryStore::deleteConversation(const QString &contact)
+{
+    if (!isOpen())
+        return;
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral("DELETE FROM messages WHERE account = ? AND contact = ?"));
+    q.addBindValue(m_account);
+    q.addBindValue(contact);
+    q.exec();
+}
+
 void HistoryStore::markRead(const QString &contact)
 {
     if (!isOpen())

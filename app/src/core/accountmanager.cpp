@@ -915,6 +915,16 @@ void AccountManager::storeIncoming(const QString &uin, const QString &text, cons
     }
 }
 
+void AccountManager::deleteConversation(const QString &uin)
+{
+    if (isContact(uin))
+        return;
+    m_history.deleteConversation(uin);
+    if (ChatModel *c = m_chats.value(normalized(uin)))
+        c->reload();
+    m_contacts->remove(uin);
+}
+
 void AccountManager::markRead(const QString &uin)
 {
     m_history.markRead(uin);

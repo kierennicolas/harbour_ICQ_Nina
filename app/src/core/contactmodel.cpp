@@ -257,6 +257,12 @@ bool ContactModel::contains(const QString &uin) const
     return indexOf(uin) >= 0;
 }
 
+bool ContactModel::isAwaitingAuth(const QString &uin) const
+{
+    const int i = indexOf(uin);
+    return i >= 0 && m_items.at(i).awaitingAuth;
+}
+
 bool ContactModel::isTyping(const QString &uin) const
 {
     const int i = indexOf(uin);

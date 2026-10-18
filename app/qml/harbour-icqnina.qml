@@ -10,6 +10,20 @@ ApplicationWindow {
 
     // uin -> Notification shown for that conversation
     property var notifications: ({})
+    // Authorization requests not answered yet: [{uin, name, reason}]
+    property var pendingAuthorizations: []
+
+    function showNextAuthorization() {
+        if (pendingAuthorizations.length === 0 || Qt.application.state !== Qt.ApplicationActive || pageStack.busy)
+            return
+        var r = pendingAuthorizations[0]
+        pendingAuthorizations = pendingAuthorizations.slice(1)
+        pageStack.push(Qt.resolvedUrl("pages/AuthorizationDialog.qml"), { uin: r.uin, name: r.name, reason: r.reason })
+    }
+
+    function isViewing(uin) {
+        return Qt.application.state === Qt.ApplicationActive && account.activeChat === uin
+    }
 
     initialPage: Component { ContactsPage {} }
     cover: Component { CoverPage {} }
@@ -80,9 +94,41 @@ ApplicationWindow {
             app.notify(uin, name, reason.length > 0
                        ? qsTr("Asks to add you to their list: %1").arg(reason)
                        : qsTr("Asks to add you to their list"))
-            if (Qt.application.state === Qt.ApplicationActive)
-                pageStack.push(Qt.resolvedUrl("pages/AuthorizationDialog.qml"), { uin: uin, name: name, reason: reason })
+            for (var i = 0; i < app.pendingAuthorizations.length; ++i)
+                if (app.pendingAuthorizations[i].uin === uin)
+                    return
+            app.pendingAuthorizations = app.pendingAuthorizations.concat([{ uin: uin, name: name, reason: reason }])
+            app.showNextAuthorization()
         }
+        onAuthorizationAnswered: {
+            app.notify(uin, account.displayName(uin), granted ? qsTr("Allowed you to add them")
+                                                               : qsTr("Did not allow you to add them"))
+        }
+        onContactAddedYou: app.notify(uin, name, qsTr("Added you to their contact list"))
+    }
+
+    Connections {
+        target: account.transfers
+        onIncomingOffer: {
+            if (!app.isViewing(uin))
+                app.notify(uin, account.displayName(uin), qsTr("Wants to send you %1 (%2)")
+                           .arg(fileName).arg(account.transfers.formatSize(size)))
+        }
+        onTransferEnded: {
+            // state 3 = done
+            if (incoming && state === 3 && !app.isViewing(uin))
+                app.notify(uin, account.displayName(uin), qsTr("Received %1").arg(fileName))
+        }
+    }
+
+    Connections {
+        target: Qt.application
+        onStateChanged: app.showNextAuthorization()
+    }
+
+    Connections {
+        target: pageStack
+        onBusyChanged: if (!pageStack.busy) app.showNextAuthorization()
     }
 
     Connections {

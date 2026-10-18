@@ -22,10 +22,14 @@
 #include <cstdlib>
 #include <unistd.h>
 
+#include <QDateTime>
+
 #include "accountmanager.h"
 #include "chatmodel.h"
 #include "contactmodel.h"
 #include "dbusservice.h"
+#include "searchmodel.h"
+#include "transfermanager.h"
 
 static QString g_appUrl;
 static QString g_appPath;
@@ -76,6 +80,8 @@ int main(int argc, char **argv)
     qmlRegisterUncreatableType<AccountManager>("harbour.icqnina", 1, 0, "Account", QStringLiteral("no"));
     qmlRegisterUncreatableType<ContactModel>("harbour.icqnina", 1, 0, "ContactModel", QStringLiteral("no"));
     qmlRegisterUncreatableType<ChatModel>("harbour.icqnina", 1, 0, "ChatModel", QStringLiteral("no"));
+    qmlRegisterUncreatableType<SearchModel>("harbour.icqnina", 1, 0, "SearchModel", QStringLiteral("no"));
+    qmlRegisterUncreatableType<TransferManager>("harbour.icqnina", 1, 0, "Transfers", QStringLiteral("no"));
 
     QTemporaryDir tmp;
     AccountManager account(tmp.path() + QStringLiteral("/config"), tmp.path() + QStringLiteral("/data"));
@@ -121,6 +127,32 @@ int main(int argc, char **argv)
            { { QStringLiteral("uin"), QStringLiteral("100002") }, { QStringLiteral("name"), QStringLiteral("Test") },
              { QStringLiteral("reason"), QStringLiteral("Please add me") } });
     create(view.engine(), ctx, root, "cover/CoverPage.qml");
+    // Phase 2 pages and components.
+    const QString uin = QStringLiteral("100002");
+    create(view.engine(), ctx, root, "pages/AddContactPage.qml");
+    create(view.engine(), ctx, root, "pages/AddContactDialog.qml",
+           { { QStringLiteral("uin"), uin }, { QStringLiteral("name"), QStringLiteral("Test") },
+             { QStringLiteral("authRequired"), true } });
+    create(view.engine(), ctx, root, "pages/ContactInfoPage.qml", { { QStringLiteral("uin"), uin } });
+    create(view.engine(), ctx, root, "pages/PrivacyPage.qml");
+    create(view.engine(), ctx, root, "pages/GroupsPage.qml");
+    create(view.engine(), ctx, root, "pages/GroupDialog.qml", { { QStringLiteral("current"), QStringLiteral("Buddies") } });
+    create(view.engine(), ctx, root, "pages/TextInputDialog.qml",
+           { { QStringLiteral("title"), QStringLiteral("Rename") }, { QStringLiteral("label"), QStringLiteral("Name") } });
+    create(view.engine(), ctx, root, "pages/SendFileDialog.qml",
+           { { QStringLiteral("uin"), uin }, { QStringLiteral("name"), QStringLiteral("Test") },
+             { QStringLiteral("filePath"), QStringLiteral("/tmp/photo.jpg") }, { QStringLiteral("fileName"), QStringLiteral("photo.jpg") },
+             { QStringLiteral("fileSize"), 123456 } });
+    for (int state = 0; state <= 7; ++state) {
+        create(view.engine(), ctx, root, "components/FileBubble.qml",
+               { { QStringLiteral("outgoing"), state % 2 == 1 }, { QStringLiteral("fileName"), QStringLiteral("photo.jpg") },
+                 { QStringLiteral("fileSize"), 123456 }, { QStringLiteral("fileState"), state },
+                 { QStringLiteral("fileDone"), 1000 }, { QStringLiteral("filePath"), QStringLiteral("/tmp/photo.jpg") },
+                 { QStringLiteral("fileUrl"), state == 3 ? QStringLiteral("https://litter.catbox.moe/x.jpg") : QString() },
+                 { QStringLiteral("transferId"), state == 3 ? QStringLiteral("link-1") : QStringLiteral("abc") },
+                 { QStringLiteral("timestamp"), QDateTime::currentDateTime() },
+                 { QStringLiteral("contact"), uin }, { QStringLiteral("contactName"), QStringLiteral("Test") } });
+    }
 
     // Let bindings, timers and deferred creation run for a moment.
     QTimer::singleShot(1500, &app, &QCoreApplication::quit);

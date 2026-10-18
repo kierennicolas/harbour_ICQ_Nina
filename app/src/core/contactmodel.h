@@ -76,6 +76,7 @@ public:
     Q_INVOKABLE int presenceOf(const QString &uin) const;
     Q_INVOKABLE bool contains(const QString &uin) const;
     Q_INVOKABLE bool isTyping(const QString &uin) const;
+    Q_INVOKABLE bool isAwaitingAuth(const QString &uin) const;
     int onlineCount() const;
     int unreadTotal() const;
     QVector<Item> items() const { return m_items; }

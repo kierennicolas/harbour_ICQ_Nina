@@ -70,6 +70,11 @@ Page {
                 onClicked: pageStack.push(Qt.resolvedUrl("SettingsPage.qml"))
             }
             MenuItem {
+                visible: account.hasAccount && account.state === 2
+                text: qsTr("Add contact")
+                onClicked: pageStack.push(Qt.resolvedUrl("AddContactPage.qml"))
+            }
+            MenuItem {
                 visible: !account.hasAccount
                 text: qsTr("Sign in")
                 onClicked: pageStack.push(Qt.resolvedUrl("SignInDialog.qml"))
@@ -90,13 +95,72 @@ Page {
 
         section.property: "group"
         section.delegate: SectionHeader {
-            text: section.length > 0 ? section : qsTr("Not on your list")
+            text: section.length > 0 ? section : qsTr("Not in your contact list")
         }
 
         delegate: ListItem {
             id: item
             contentHeight: Theme.itemSizeMedium
             onClicked: pageStack.push(Qt.resolvedUrl("ConversationPage.qml"), { uin: model.uin })
+            menu: contactMenu
+
+            RemorseItem { id: remorse }
+
+            Component {
+                id: contactMenu
+                ContextMenu {
+                    readonly property bool listed: account.isContact(model.uin)
+                    readonly property bool online: account.state === 2
+                    MenuItem {
+                        text: qsTr("Contact details")
+                        onClicked: pageStack.push(Qt.resolvedUrl("ContactInfoPage.qml"), { uin: model.uin })
+                    }
+                    MenuItem {
+                        visible: listed && online
+                        text: qsTr("Rename")
+                        onClicked: {
+                            var uin = model.uin
+                            var d = pageStack.push(Qt.resolvedUrl("TextInputDialog.qml"), {
+                                title: qsTr("Rename"), label: qsTr("Name in your list"),
+                                value: account.aliasOf(uin), placeholder: uin, allowEmpty: true })
+                            d.accepted.connect(function() { account.renameContact(uin, d.value) })
+                        }
+                    }
+                    MenuItem {
+                        visible: listed && online
+                        text: qsTr("Move to group")
+                        onClicked: {
+                            var uin = model.uin
+                            var d = pageStack.push(Qt.resolvedUrl("GroupDialog.qml"), { current: account.groupOf(uin) })
+                            d.accepted.connect(function() { account.moveContact(uin, d.group) })
+                        }
+                    }
+                    MenuItem {
+                        visible: !listed && online
+                        text: qsTr("Add to contact list")
+                        onClicked: pageStack.push(Qt.resolvedUrl("AddContactDialog.qml"), { uin: model.uin, name: model.name })
+                    }
+                    MenuItem {
+                        visible: online
+                        text: account.isBlocked(model.uin) ? qsTr("Unblock") : qsTr("Block")
+                        onClicked: account.isBlocked(model.uin) ? account.unblock(model.uin) : account.block(model.uin)
+                    }
+                    MenuItem {
+                        visible: !listed || online
+                        text: listed ? qsTr("Remove from contact list") : qsTr("Delete conversation")
+                        onClicked: {
+                            var uin = model.uin
+                            var wasListed = listed
+                            remorse.execute(item, wasListed ? qsTr("Removing") : qsTr("Deleting"), function() {
+                                if (wasListed)
+                                    account.removeContact(uin)
+                                else
+                                    account.deleteConversation(uin)
+                            })
+                        }
+                    }
+                }
+            }
 
             PresenceDot {
                 id: dot
@@ -167,7 +231,7 @@ Page {
                 : qsTr("Your contacts appear here once you are online")
             hintText: !account.hasAccount ? qsTr("Pull down to sign in with your ICQ number")
                 : account.lastError.length > 0 ? account.lastError
-                : account.state === 2 ? qsTr("Contacts on your server-side list show up here")
+                : account.state === 2 ? qsTr("Pull down to add someone by ICQ number, nickname or email")
                 : qsTr("Pull down to go online")
         }
 

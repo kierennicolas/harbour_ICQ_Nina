@@ -52,6 +52,7 @@ public:
     // stored within toleranceSecs of when (offline messages can arrive twice).
     bool hasIncoming(const QString &contact, const QString &text, const QDateTime &when, int toleranceSecs) const;
     void markRead(const QString &contact);
+    void deleteConversation(const QString &contact);
     QVector<StoredMessage> messages(const QString &contact, int limit = 300) const;
     int unreadCount(const QString &contact) const;
     // contact -> (last message text, time) for everyone we have talked to
