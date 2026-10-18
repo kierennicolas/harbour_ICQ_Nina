@@ -13,7 +13,7 @@ Unofficial: not affiliated with NINA/Level Leap, ICQ or AOL.
 plain and TLS connections, reads the server-side contact list and sends and
 receives messages (verified in CI with a test account).
 
-**Phase 1 (app) – first version.** The Sailfish app *ICQ Nina*:
+**Phase 1 (app) – done.** The Sailfish app *ICQ Nina*:
 
 - sign in with an ICQ number (or AIM screen name) and password; NINA
   encrypted (default), NINA unencrypted or any other OSCAR server
@@ -26,10 +26,34 @@ receives messages (verified in CI with a test account).
   cover
 - automatic reconnect with backoff, liveness checks every 2.5 minutes even
   when the phone sleeps, optional "stay connected with the screen off"
-- accepts or denies authorization requests
 
-Next (Phase 2): adding and removing contacts, requesting authorization,
-ICQ user info and search, offline-message retrieval, block lists.
+**Phase 2 (ICQ complete) – first version (0.2.0).**
+
+- add contacts: search the ICQ directory by number, nickname, name or email,
+  or add a number directly; choose a group; if they require authorization the
+  request (with your message) is sent automatically
+- contact details from the directory; rename, move between groups, remove;
+  manage groups (create, rename, delete empty ones)
+- authorization both ways: answer requests (queued, with notifications),
+  ask again, "others must ask before adding me"
+- privacy: block (ignore + invisible lists), always/never visible to someone,
+  who can see me online (everyone except blocked, only contacts, only the
+  visible list, everyone, nobody)
+- offline messages (ICQ meta retrieval on NINA, 04/10 elsewhere), with
+  duplicate protection
+- **files**: send from the file picker as an OSCAR file transfer (through
+  NINA's relay by default, or directly) or as a Litterbox download link (works
+  with any client and when they are offline); receive files (accept or decline,
+  saved in Downloads, open from the chat); progress, cancel, "send as link
+  instead" when a transfer fails
+
+Verified in CI against a local Open OSCAR Server (contacts, groups,
+authorization, blocking, directory, offline messages, direct and proxied file
+transfers, links via a stand-in upload server) and against NINA (directory
+search and info, ICQ offline retrieval, the rendezvous proxy handshake).
+
+Next (Phase 3): AIM extras, multiple accounts, buddy icons, chat rooms,
+share-to-app.
 
 | Piece | What it is |
 | --- | --- |

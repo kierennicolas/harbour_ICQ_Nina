@@ -40,3 +40,29 @@ header before reusing a file on its own.
   and the multi-session TLV 0x4A for ICQ as well as AIM.
 - `Client::requestOwnInfo()` (SNAC 01/0E), used by the app as a liveness check.
 - `CMakeLists.txt` files removed.
+
+Phase 2 (contacts, privacy, directory, offline messages, files):
+
+- **File transfer:** the rendezvous proxy host and port are settings
+  (`Settings::setFileProxyHost/Port`; Kopete hard-coded AOL's
+  `ars.oscar.aol.com`, NINA's is `ars.oscar.nina.bz`). A file proposal that
+  comes back to us (several sessions of one account, or sending to
+  yourself) is ignored instead of being taken for the other side's redirect.
+  `FileTransferTask` reads exactly one proxy packet at a time, and
+  `OftMetaTransfer` buffers its input, so an OFT header split over several
+  reads, or arriving together with file data, no longer crashes or
+  corrupts the transfer. A file name sent by the other side can no longer
+  point outside the download folder.
+- **Offline messages:** the 04/10 request now waits for the server's 04/17
+  reply; when none comes (NINA), ICQ accounts ask with ICQ meta request
+  0x003C and delete with 0x003E (`ICQOfflineMessagesTask`).
+- **Contact list:** a refused change (13/0E codes 0x0A, 0x0C, 0x0D) is
+  reported (`Client::contactEditFailed`); permit/deny/ignore and privacy
+  items signal `ContactManager::itemChanged`; renaming a group no longer
+  leaves the old group in the list; "you were added" (13/1C) is reported
+  (`Client::contactAddedYou`).
+- **ICQ info:** each reply is matched to its own request's type (overlapping
+  short and full requests were mixed up), and full info is reported even
+  when the server never sends the last (affiliations) part, as NINA does.
+- `Client::setAuthorizationRequired()` sets the ICQ "authorization required"
+  flag (meta 0x0C3A, TLV 0x02F8).
