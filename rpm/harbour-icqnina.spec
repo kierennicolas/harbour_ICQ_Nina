@@ -12,7 +12,8 @@ Source0:    %{name}-%{version}.tar.bz2
 %define __requires_exclude ^liboscar.*$
 
 Requires:       sailfishsilica-qt5 >= 0.10.9
-Requires:       qt5-plugin-sqldriver-sqlite
+# The Qt SQLite driver (history) ships on every Sailfish OS device, and Harbour
+# does not allow depending on it; without it the app runs with history off.
 BuildRequires:  pkgconfig(sailfishapp) >= 1.0.2
 BuildRequires:  pkgconfig(Qt5Core)
 BuildRequires:  pkgconfig(Qt5Gui)
@@ -40,6 +41,9 @@ Unofficial; not affiliated with NINA, ICQ or AOL.
 
 %install
 %qmake5_install
+# mb2 builds without a debuginfo package, so nothing else strips the binaries
+# (liboscar is ~55 MB with debug info, ~2 MB without).
+%{__strip} --strip-unneeded %{buildroot}%{_bindir}/%{name} %{buildroot}%{_datadir}/%{name}/lib/liboscar.so.1.0.0
 desktop-file-install --delete-original --dir %{buildroot}%{_datadir}/applications %{buildroot}%{_datadir}/applications/*.desktop
 
 %files

@@ -6,6 +6,7 @@ TARGET = qmlcheck
 CONFIG += c++11
 QT += quick qml dbus
 include(../../app/src/core/core.pri)
+INCLUDEPATH += ../../app/src
 SOURCES += main.cpp ../../app/src/dbusservice.cpp
 HEADERS += ../../app/src/dbusservice.h
 isEmpty(LIBOSCAR_DIR): LIBOSCAR_DIR = /usr/share/harbour-icqnina/lib

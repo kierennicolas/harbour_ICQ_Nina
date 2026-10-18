@@ -19,7 +19,7 @@ echo "::group::Install the RPM and its dependencies into $TARGET"
 $SB2 -m sdk-install -R zypper --non-interactive refresh >/dev/null 2>&1 || true
 deps=$(rpm -qpR "${rpms[0]}" | awk '$1 !~ /^(rpmlib\(|\/|lib.*\.so)/ {print $1}' | sort -u)
 echo "Requires (packages): $deps"
-$SB2 -m sdk-install -R zypper --non-interactive install $deps nemo-qml-plugin-notifications-qt5 libkeepalive \
+$SB2 -m sdk-install -R zypper --non-interactive install $deps nemo-qml-plugin-notifications-qt5 libkeepalive qt5-plugin-sqldriver-sqlite \
   || { echo "::error::Could not install the app's dependencies"; problems=$((problems + 1)); }
 mkdir -p "$HOME/rpm-in" && cp "${rpms[0]}" "$HOME/rpm-in/"
 if ! $SB2 -m sdk-install -R rpm -Uvh --force "$HOME/rpm-in/${rpms[0]##*/}"; then
