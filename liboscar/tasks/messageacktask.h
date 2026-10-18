@@ -1,0 +1,40 @@
+/*
+    messageacktask.h  - Incoming OSCAR Messaging Acknowledgement Handler
+
+    Copyright (c) 2008      by Roman Jarosz <kedgedev@centrum.cz>
+    Kopete    (c) 2008      by the Kopete developers  <kopete-devel@kde.org>
+
+    *************************************************************************
+    *                                                                       *
+    * This program is free software; you can redistribute it and/or modify  *
+    * it under the terms of the GNU General Public License as published by  *
+    * the Free Software Foundation; either version 2 of the License, or     *
+    * (at your option) any later version.                                   *
+    *                                                                       *
+    *************************************************************************
+*/
+#ifndef MESSAGEACKTASK_H
+#define MESSAGEACKTASK_H
+
+#include "task.h"
+
+/**
+ * Handles message acks.
+ * @author Roman Jarosz
+*/
+class MessageAckTask : public Task
+{
+	Q_OBJECT
+public:
+	MessageAckTask( Task* parent );
+
+	bool forMe( const Transfer* transfer ) const Q_DECL_OVERRIDE;
+	bool take( Transfer* transfer ) Q_DECL_OVERRIDE;
+
+Q_SIGNALS:
+	void messageAck( const QString& contact, uint messageId );
+
+};
+
+#endif
+

@@ -1,0 +1,9 @@
+build*/
+RPMS/
+Makefile
+.qmake.stash
+*.o
+moc_*
+*.so*
+/tools/oscarprobe/oscarprobe
+*.pro.user*

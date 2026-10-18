@@ -1,0 +1,120 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OOS_VERSION: 0.24.0
+  SFOS_RELEASE: 4.5.0.16
+
+jobs:
+  desktop:
+    name: Library + integration tests (desktop Qt 5, local Open OSCAR Server)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Qt 5
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qtbase5-dev qt5-qmake
+      - name: Build liboscar and oscarprobe
+        run: |
+          mkdir -p build && cd build
+          qmake ../harbour_icq_nina.pro && make -j"$(nproc)"
+      - name: Fetch Open OSCAR Server ${{ env.OOS_VERSION }}
+        run: |
+          curl -sSL -o oos.tgz "https://github.com/mk6i/open-oscar-server/releases/download/v$OOS_VERSION/open_oscar_server.$OOS_VERSION.linux.x86_64.tar.gz"
+          tar xzf oos.tgz
+      - name: Integration tests
+        run: |
+          set -o pipefail
+          rc=0
+          tests/oos-integration.sh build/tools/oscarprobe/oscarprobe \
+            "open_oscar_server.$OOS_VERSION.linux.x86_64/open_oscar_server" 2>&1 | tee integration.log || rc=$?
+          ci/annotate.sh "$([ $rc = 0 ] && echo notice || echo error)" "Integration tests" integration.log 120
+          exit $rc
+
+  sailfish:
+    name: Sailfish OS armv7hl build (Qt 5.6) + ARM run under qemu
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Free disk space for the SDK image
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: Pull Sailfish SDK
+        run: docker pull "coderus/sailfishos-platform-sdk-armv7hl:$SFOS_RELEASE"
+      - name: Start a local Open OSCAR Server with two ICQ accounts
+        run: |
+          curl -sSL -o oos.tgz "https://github.com/mk6i/open-oscar-server/releases/download/v$OOS_VERSION/open_oscar_server.$OOS_VERSION.linux.x86_64.tar.gz"
+          tar xzf oos.tgz
+          cd "open_oscar_server.$OOS_VERSION.linux.x86_64"
+          cat > ci.env <<CFG
+          export OSCAR_LISTENERS=LOCAL://127.0.0.1:5190
+          export OSCAR_ADVERTISED_LISTENERS_PLAIN=LOCAL://127.0.0.1:5190
+          export TOC_LISTENERS=127.0.0.1:9898
+          export API_LISTENER=127.0.0.1:8080
+          export DB_PATH=$PWD/oscar.sqlite
+          export DISABLE_AUTH=false
+          export ICQ_LEGACY_ENABLED=false
+          CFG
+          (set -a; . ./ci.env; set +a; nohup ./open_oscar_server > server.log 2>&1 &)
+          for _ in $(seq 1 50); do curl -s -o /dev/null http://127.0.0.1:8080/user && break; sleep 0.2; done
+          for u in 100001 100002; do
+            curl -sS -X POST http://127.0.0.1:8080/user -d "{\"screen_name\":\"$u\",\"password\":\"pw$u\"}"; echo
+          done
+      - name: Build with the Sailfish SDK and run the ARM binaries
+        run: |
+          set -o pipefail
+          rc=0
+          docker run --rm --privileged --network host \
+            -e SFOS_RELEASE -e SFOS_ARCH=armv7hl \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            "coderus/sailfishos-platform-sdk-armv7hl:$SFOS_RELEASE" /bin/bash /workspace/ci/sfos-build.sh 2>&1 | tee sfos.log || rc=$?
+          ci/annotate.sh "$([ $rc = 0 ] && echo notice || echo error)" "Sailfish build" sfos.log 80
+          exit $rc
+
+  nina:
+    name: Live sign-on probe against NINA
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # One probe at a time: NINA rate-limits quick repeated sign-ons.
+    concurrency:
+      group: nina-probe
+      cancel-in-progress: false
+    if: github.event_name != 'pull_request'
+    env:
+      NINA_UIN: ${{ secrets.NINA_UIN }}
+      NINA_PASSWORD: ${{ secrets.NINA_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check that the account secrets exist
+        id: secrets
+        run: |
+          if [ -n "$NINA_UIN" ] && [ -n "$NINA_PASSWORD" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
+          else echo "::warning title=NINA probe skipped::Add the NINA_UIN and NINA_PASSWORD repository secrets to run the live probe."; fi
+      - name: Install Qt 5
+        if: steps.secrets.outputs.ok == 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qtbase5-dev qt5-qmake
+      - name: Build oscarprobe
+        if: steps.secrets.outputs.ok == 'true'
+        run: |
+          mkdir -p build && cd build
+          qmake ../harbour_icq_nina.pro && make -j"$(nproc)"
+      - name: Sign on to NINA
+        if: steps.secrets.outputs.ok == 'true'
+        run: |
+          set -o pipefail
+          rc=0
+          ci/nina-probe.sh build/tools/oscarprobe/oscarprobe 2>&1 | tee nina.log || rc=$?
+          ci/annotate.sh "$([ $rc = 0 ] && echo notice || echo error)" "NINA probe" nina.log 160
+          exit $rc
