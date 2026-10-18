@@ -125,7 +125,7 @@ Page {
                 anchors.horizontalCenter: parent.horizontalCenter
                 running: account.searching
                 visible: running
-                size: BusySize.Medium
+                size: BusyIndicatorSize.Medium
             }
 
             Label {

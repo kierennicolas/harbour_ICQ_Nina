@@ -155,7 +155,7 @@ Page {
                 anchors.horizontalCenter: parent.horizontalCenter
                 running: page.loading
                 visible: running
-                size: BusySize.Medium
+                size: BusyIndicatorSize.Medium
             }
 
             SectionHeader {
