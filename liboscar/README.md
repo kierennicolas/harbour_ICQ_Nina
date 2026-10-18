@@ -30,4 +30,12 @@ header before reusing a file on its own.
   last bytes had not arrived yet was parsed truncated and the stream lost
   sync. It showed up as a sign-on that hung when the server's 10-byte hello
   arrived in two TCP segments.
+- **NINA compatibility** in `tasks/logintask.cpp`: sign-on moves to the BOS
+  server as soon as the authorizer returns the BOS address and cookie
+  (SNAC 17/03). Kopete waited for the authorizer to close the connection with
+  a channel-4 frame; NINA does not send one, so sign-on stalled until NINA
+  dropped the connection about 30 seconds later.
+- Optional sign-on variants in `Oscar::Settings` (all off by default): the
+  strong BUCP password hash with TLV 0x4C, TLVs 0x4B/0x5A in the key request,
+  and the multi-session TLV 0x4A for ICQ as well as AIM.
 - `CMakeLists.txt` files removed.

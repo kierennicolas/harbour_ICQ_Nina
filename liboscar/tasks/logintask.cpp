@@ -94,6 +94,16 @@ void StageOneLoginTask::loginTaskFinished()
 		disconnect( m_closeTask, SIGNAL(finished()), this, SLOT(closeTaskFinished()) );
 		setError( m_loginTask->statusCode(), m_loginTask->statusString() );
 	}
+	else if ( !m_cookie.isEmpty() && !m_bosServer.isEmpty() )
+	{
+		// harbour_icq_nina: the authorizer has already handed over the BOS
+		// address and cookie, so move on. Kopete waited for the server to
+		// close the login connection with a channel-4 frame; AOL and Open
+		// OSCAR Server send one, but NINA leaves the connection open (and
+		// drops it ~30 s later), so the sign-on never reached stage two.
+		disconnect( m_closeTask, SIGNAL(finished()), this, SLOT(closeTaskFinished()) );
+		setSuccess( 0, QString() );
+	}
 }
 
 bool StageOneLoginTask::forMe( const Transfer* transfer ) const
