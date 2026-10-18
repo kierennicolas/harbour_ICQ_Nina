@@ -24,8 +24,23 @@ Page {
     }
 
     onStatusChanged: {
-        if (status === PageStatus.Active && !account.hasAccount && !askedForAccount) {
-            askedForAccount = true
+        if (status === PageStatus.Active && !account.hasAccount && !askedForAccount)
+            signInTimer.start()
+    }
+
+    // Pushing from inside onStatusChanged re-enters the page's own status
+    // change (a binding loop on "status"), so push once it has settled.
+    Timer {
+        id: signInTimer
+        interval: 50
+        onTriggered: {
+            if (page.status !== PageStatus.Active || account.hasAccount || page.askedForAccount)
+                return
+            if (pageStack.busy) {
+                restart()
+                return
+            }
+            page.askedForAccount = true
             pageStack.push(Qt.resolvedUrl("SignInDialog.qml"))
         }
     }
