@@ -188,6 +188,12 @@ AccountManager::AccountManager(const QString &configDir, const QString &dataDir,
         emit profileSaved(false, tr("The server did not answer. Your details may not have been saved."));
     });
     m_avatars.open(m_dataDir + QStringLiteral("/icons"));
+    // Outbox: one message at a time (the server limits the rate), and a look
+    // every few seconds for messages to offline people that got no answer.
+    m_sendTimer.setInterval(400);
+    connect(&m_sendTimer, &QTimer::timeout, this, &AccountManager::sendNextQueued);
+    m_ackTimer.setInterval(10000);
+    connect(&m_ackTimer, &QTimer::timeout, this, &AccountManager::checkUnanswered);
     m_stickers = new StickerStore(this);
     m_stickers->open(QString(), m_dataDir + QStringLiteral("/stickers"));
     m_media = new MediaManager(this, m_dataDir + QStringLiteral("/media"), m_stickers);
@@ -535,8 +541,16 @@ void AccountManager::dropClient()
     }
     c->close();
     c->deleteLater();
-    // Messages still waiting for an acknowledgement stay "sending".
+    // Messages without an acknowledgement go to the outbox and are sent
+    // again after reconnecting.
+    for (auto it = m_pendingAcks.constBegin(); it != m_pendingAcks.constEnd(); ++it)
+        setQueued(it.value().first, it.value().second, true);
     m_pendingAcks.clear();
+    m_pendingSince.clear();
+    m_lateAcks.clear();
+    m_sendQueue.clear();
+    m_sendTimer.stop();
+    m_ackTimer.stop();
 }
 
 void AccountManager::onLoggedIn()
@@ -593,6 +607,8 @@ void AccountManager::onHaveContactList()
 {
     rebuildContactsFromServer();
     flushPendingAdds();
+    // The outbox, once presence has had a moment to arrive.
+    QTimer::singleShot(4000, this, [this]() { flushQueue(); });
     if (isIcq() && m_client)
         m_client->requestFullInfo(m_uin); // our nickname and "authorization required"
 }
@@ -858,9 +874,49 @@ bool AccountManager::sendMessage(const QString &uin, const QString &rawText)
 bool AccountManager::sendText(const QString &uin, const QString &rawText, bool record, qint64 ackFor)
 {
     const QString text = rawText.trimmed();
-    if (text.isEmpty() || m_state != Online || !m_client)
+    if (text.isEmpty() || uin.trimmed().isEmpty() || m_uin.isEmpty())
         return false;
+    const bool online = m_state == Online && m_client;
 
+    if (!record) {
+        if (ackFor <= 0)
+            return online ? (transmit(uin, text, 0), true) : false;
+        // A stored message (photo, voice, sticker): sent now or from the outbox.
+        if (online)
+            transmit(uin, text, ackFor);
+        else
+            setQueued(uin, ackFor, true);
+        return true;
+    }
+
+    StoredMessage m;
+    m.contact = uin;
+    m.outgoing = true;
+    m.text = text;
+    m.timestamp = QDateTime::currentDateTime();
+    m.delivered = false;
+    m.read = true;
+    m.queued = !online;   // offline ourselves: straight into the outbox
+    m.id = m_history.addMessage(m);
+    if (!m_contacts->contains(uin)) {
+        ContactModel::Item it;
+        it.uin = uin;
+        m_contacts->upsert(it);
+    }
+    if (ChatModel *c = m_chats.value(Oscar::normalize(uin)))
+        c->append(m);
+    m_contacts->setLastMessage(uin, text, m.timestamp);
+    if (online)
+        transmit(uin, text, m.id);
+    else
+        emit queueChanged(uin);
+    return true;
+}
+
+void AccountManager::transmit(const QString &uin, const QString &text, qint64 historyId)
+{
+    if (!m_client)
+        return;
     const bool toIcq = !uin.isEmpty() && uin.at(0).isDigit();
     // AIM clients read HTML; ICQ clients read plain text.
     const QString wire = toIcq ? text : text.toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br>"));
@@ -873,42 +929,170 @@ bool AccountManager::sendText(const QString &uin, const QString &rawText, bool r
     msg.setSender(m_uin);
     msg.setTimestamp(QDateTime::currentDateTime());
     msg.setChannel(0x01);
+    // The message asks the server to keep it if they are offline (TLV 6).
     m_client->sendMessage(msg);
-    if (!record) {
-        if (ackFor > 0)
-            m_pendingAcks.insert(id, qMakePair(Oscar::normalize(uin), ackFor));
-        return true;
+    if (historyId > 0) {
+        m_pendingAcks.insert(id, qMakePair(Oscar::normalize(uin), historyId));
+        m_pendingSince.insert(id, QDateTime::currentDateTime());
+        if (!m_ackTimer.isActive())
+            m_ackTimer.start();
     }
+}
 
-    StoredMessage m;
-    m.contact = uin;
-    m.outgoing = true;
-    m.text = text;
-    m.timestamp = QDateTime::currentDateTime();
-    m.delivered = false;
-    m.read = true;
-    m.id = m_history.addMessage(m);
-    m_pendingAcks.insert(id, qMakePair(Oscar::normalize(uin), m.id));
+void AccountManager::setQueued(const QString &uin, qint64 historyId, bool queued)
+{
+    if (historyId <= 0)
+        return;
+    m_history.setQueued(historyId, queued);
     if (ChatModel *c = m_chats.value(Oscar::normalize(uin)))
-        c->append(m);
-    m_contacts->setLastMessage(uin, text, m.timestamp);
-    return true;
+        c->setQueued(historyId, queued);
+    if (queued)
+        emit messageQueued(uin);
+    emit queueChanged(uin);
+}
+
+QString AccountManager::wireTextOf(const StoredMessage &m)
+{
+    if (m.kind == StoredMessage::Text)
+        return m.text;
+    // A photo, voice message or sticker that was uploaded: its link again.
+    if (m.kind == StoredMessage::Media && !m.fileUrl.isEmpty())
+        return MediaLink::messageText(m.mediaType, m.fileUrl.section(QLatin1Char('#'), 0, 0), m.mediaInfo);
+    return QString();
+}
+
+void AccountManager::flushQueue(const QString &contact)
+{
+    if (m_state != Online || !m_client)
+        return;
+    const QVector<StoredMessage> queued = m_history.queuedMessages(contact);
+    for (const StoredMessage &m : queued) {
+        // Everyone's outbox (after signing on): not to contacts known to be
+        // offline; theirs goes when they come online.
+        if (contact.isEmpty() && m_contacts->contains(m.contact) && isContact(m.contact)
+                && m_contacts->presenceOf(m.contact) == ContactModel::Offline)
+            continue;
+        bool already = false;
+        for (const auto &q : m_sendQueue)
+            already = already || q.second == m.id;
+        for (const auto &p : m_pendingAcks)
+            already = already || p.second == m.id;
+        if (!already)
+            m_sendQueue.append(qMakePair(m.contact, m.id));
+    }
+    if (!m_sendQueue.isEmpty() && !m_sendTimer.isActive()) {
+        sendNextQueued();
+        m_sendTimer.start();
+    }
+}
+
+void AccountManager::sendNextQueued()
+{
+    if (m_sendQueue.isEmpty() || m_state != Online || !m_client) {
+        m_sendTimer.stop();
+        return;
+    }
+    const QPair<QString, qint64> next = m_sendQueue.takeFirst();
+    const StoredMessage m = m_history.message(next.second);
+    if (m.id && m.queued) {
+        const QString text = wireTextOf(m);
+        if (!text.isEmpty()) {
+            setQueued(m.contact, m.id, false);
+            transmit(m.contact, text, m.id);
+        }
+    }
+    if (m_sendQueue.isEmpty())
+        m_sendTimer.stop();
+}
+
+void AccountManager::checkUnanswered()
+{
+    // No acknowledgement and no error for a message to someone offline: the
+    // server neither took it nor said so. Keep it for when they come online.
+    const QDateTime now = QDateTime::currentDateTime();
+    for (auto it = m_pendingSince.begin(); it != m_pendingSince.end();) {
+        const uint id = it.key();
+        const QPair<QString, qint64> p = m_pendingAcks.value(id);
+        if (it.value().secsTo(now) >= 25 && isContact(p.first)
+                && m_contacts->presenceOf(p.first) == ContactModel::Offline) {
+            m_pendingAcks.remove(id);
+            m_lateAcks.insert(id, p);
+            setQueued(m_history.message(p.second).contact, p.second, true);
+            it = m_pendingSince.erase(it);
+        } else if (it.value().secsTo(now) >= 300) {
+            it = m_pendingSince.erase(it); // stays "sending"
+        } else {
+            ++it;
+        }
+    }
+    if (m_pendingSince.isEmpty())
+        m_ackTimer.stop();
+}
+
+void AccountManager::sendQueuedNow(const QString &uin, qint64 messageId)
+{
+    const StoredMessage m = m_history.message(messageId);
+    if (!m.id || !m.outgoing || !m.queued || m_state != Online || !m_client)
+        return;
+    const QString text = wireTextOf(m);
+    if (text.isEmpty())
+        return;
+    setQueued(uin, m.id, false);
+    transmit(m.contact, text, m.id);
+}
+
+void AccountManager::deleteQueued(const QString &uin, qint64 messageId)
+{
+    const StoredMessage m = m_history.message(messageId);
+    if (!m.id || !m.outgoing || !m.queued)
+        return;
+    for (int i = m_sendQueue.size() - 1; i >= 0; --i)
+        if (m_sendQueue.at(i).second == messageId)
+            m_sendQueue.remove(i);
+    m_history.deleteMessage(messageId);
+    if (ChatModel *c = m_chats.value(Oscar::normalize(uin)))
+        c->remove(messageId);
+    emit queueChanged(uin);
+}
+
+int AccountManager::queuedCount(const QString &uin) const
+{
+    return m_history.queuedMessages(uin).size();
 }
 
 void AccountManager::onMessageAck(const QString &, uint id)
 {
-    if (!m_pendingAcks.contains(id))
+    QPair<QString, qint64> p;
+    if (m_pendingAcks.contains(id))
+        p = m_pendingAcks.take(id);
+    else if (m_lateAcks.contains(id))
+        p = m_lateAcks.take(id);   // in the outbox meanwhile: delivered after all
+    else
         return;
-    const QPair<QString, qint64> p = m_pendingAcks.take(id);
+    m_pendingSince.remove(id);
     m_history.setDelivered(p.second);
     if (ChatModel *c = m_chats.value(p.first))
         c->setDelivered(p.second);
+    for (int i = m_sendQueue.size() - 1; i >= 0; --i)
+        if (m_sendQueue.at(i).second == p.second)
+            m_sendQueue.remove(i);
+    emit queueChanged(m_history.message(p.second).contact);
 }
 
 void AccountManager::onMessageError(const QString &contact, uint id)
 {
-    m_pendingAcks.remove(id);
-    emit messageFailed(contact);
+    m_pendingSince.remove(id);
+    m_lateAcks.remove(id);
+    if (!m_pendingAcks.contains(id)) {
+        emit messageFailed(contact);
+        return;
+    }
+    // Not delivered and not kept by the server (they are offline, and the
+    // server does not store messages for them): into the outbox, sent again
+    // when they come online.
+    const QPair<QString, qint64> p = m_pendingAcks.take(id);
+    const StoredMessage m = m_history.message(p.second);
+    setQueued(m.id ? m.contact : contact, p.second, true);
 }
 
 void AccountManager::onMessage(const Oscar::Message &msg)
@@ -1056,7 +1240,11 @@ void AccountManager::onUserInfo(const QString &contact, const UserDetails &detai
         handleIcon(contact, details.buddyIconHash(), details.iconType(), details.iconCheckSumType());
     if (Oscar::normalize(contact) == Oscar::normalize(m_uin))
         return;
-    m_contacts->setPresence(contact, presenceFromDetails(details));
+    const bool wasOffline = m_contacts->presenceOf(contact) == ContactModel::Offline;
+    const int presence = presenceFromDetails(details);
+    m_contacts->setPresence(contact, presence);
+    if (wasOffline && presence != ContactModel::Offline)
+        flushQueue(contact);
 }
 
 void AccountManager::onUserOffline(const QString &contact)

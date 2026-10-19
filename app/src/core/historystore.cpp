@@ -11,7 +11,7 @@
 
 namespace {
 const char kColumns[] = "id, contact, outgoing, text, ts, delivered, read, kind, file_name, file_size,"
-                        " file_path, file_url, file_state, transfer_id, media_type, media_info";
+                        " file_path, file_url, file_state, transfer_id, media_type, media_info, queued";
 
 StoredMessage fromRow(const QSqlQuery &q)
 {
@@ -32,6 +32,7 @@ StoredMessage fromRow(const QSqlQuery &q)
     m.transferId = q.value(13).toString();
     m.mediaType = q.value(14).toInt();
     m.mediaInfo = q.value(15).toString();
+    m.queued = q.value(16).toInt() != 0;
     return m;
 }
 } // namespace
@@ -91,6 +92,8 @@ bool HistoryStore::migrate()
         // 0.3: photos, voice messages, stickers.
         { QStringLiteral("media_type"), QStringLiteral("INTEGER NOT NULL DEFAULT 0") },
         { QStringLiteral("media_info"), QStringLiteral("TEXT") },
+        // 0.3.4: the outbox.
+        { QStringLiteral("queued"), QStringLiteral("INTEGER NOT NULL DEFAULT 0") },
     };
     for (const auto &c : wanted) {
         if (columns.contains(c.first))
@@ -131,8 +134,8 @@ qint64 HistoryStore::addMessage(const StoredMessage &m)
     QSqlQuery q(m_db);
     q.prepare(QStringLiteral("INSERT INTO messages (account, contact, outgoing, text, ts, delivered, read,"
                              " kind, file_name, file_size, file_path, file_url, file_state, transfer_id,"
-                             " media_type, media_info)"
-                             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+                             " media_type, media_info, queued)"
+                             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
     q.addBindValue(m_account);
     q.addBindValue(m.contact);
     q.addBindValue(m.outgoing ? 1 : 0);
@@ -149,6 +152,7 @@ qint64 HistoryStore::addMessage(const StoredMessage &m)
     q.addBindValue(m.transferId);
     q.addBindValue(m.mediaType);
     q.addBindValue(m.mediaInfo);
+    q.addBindValue(m.queued ? 1 : 0);
     if (!q.exec()) {
         qWarning() << "history: insert" << q.lastError().text();
         return 0;
@@ -167,7 +171,47 @@ void HistoryStore::setDelivered(qint64 id)
     if (!isOpen() || id <= 0)
         return;
     QSqlQuery q(m_db);
-    q.prepare(QStringLiteral("UPDATE messages SET delivered = 1 WHERE id = ?"));
+    q.prepare(QStringLiteral("UPDATE messages SET delivered = 1, queued = 0 WHERE id = ?"));
+    q.addBindValue(id);
+    q.exec();
+}
+
+void HistoryStore::setQueued(qint64 id, bool queued)
+{
+    if (!isOpen() || id <= 0)
+        return;
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral("UPDATE messages SET queued = ? WHERE id = ?"));
+    q.addBindValue(queued ? 1 : 0);
+    q.addBindValue(id);
+    q.exec();
+}
+
+QVector<StoredMessage> HistoryStore::queuedMessages(const QString &contact) const
+{
+    QVector<StoredMessage> out;
+    if (!isOpen())
+        return out;
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral("SELECT %1 FROM messages WHERE account = ? AND outgoing = 1 AND queued = 1%2"
+                             " ORDER BY ts, id").arg(QLatin1String(kColumns),
+                                                     contact.isEmpty() ? QString() : QStringLiteral(" AND contact = ?")));
+    q.addBindValue(m_account);
+    if (!contact.isEmpty())
+        q.addBindValue(contact);
+    if (q.exec())
+        while (q.next())
+            out.append(fromRow(q));
+    return out;
+}
+
+void HistoryStore::deleteMessage(qint64 id)
+{
+    if (!isOpen() || id <= 0)
+        return;
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral("DELETE FROM messages WHERE account = ? AND id = ?"));
+    q.addBindValue(m_account);
     q.addBindValue(id);
     q.exec();
 }

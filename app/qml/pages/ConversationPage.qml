@@ -20,6 +20,8 @@ Page {
     property string name: uin
     property bool blocked: false
     property string picture
+    // Messages in the outbox for this conversation.
+    property int queued: 0
     // A file or picture picked in a picker, waiting for the picker to close.
     property var pickedFile: null
     property string pickedFor        // "file", "photo" or "sticker"
@@ -33,6 +35,7 @@ Page {
         name = account.displayName(uin)
         blocked = account.isBlocked(uin)
         picture = account.pictureOf(uin)
+        queued = account.queuedCount(uin)
     }
 
     function send() {
@@ -229,7 +232,8 @@ Page {
 
     Connections {
         target: account
-        onMessageFailed: if (uin === page.uin) failedLabel.visible = true
+        onQueueChanged: if (uin === page.uin) page.queued = account.queuedCount(page.uin)
+        onStateChanged: page.refreshContact()
         onPrivacyChanged: page.refreshContact()
         onPictureChanged: page.refreshContact()
     }
@@ -333,6 +337,16 @@ Page {
             menu: Component {
                 ContextMenu {
                     MenuItem {
+                        visible: model.outgoing && model.queued && account.state === 2
+                        text: qsTr("Send now")
+                        onClicked: account.sendQueuedNow(page.uin, model.messageId)
+                    }
+                    MenuItem {
+                        visible: model.outgoing && model.queued
+                        text: qsTr("Delete (do not send)")
+                        onClicked: account.deleteQueued(page.uin, model.messageId)
+                    }
+                    MenuItem {
                         visible: model.kind === 0
                         text: qsTr("Copy")
                         onClicked: page.copyText(model.text)
@@ -403,7 +417,8 @@ Page {
                     font.pixelSize: Theme.fontSizeTiny
                     color: Theme.secondaryColor
                     text: Format.formatDate(model.timestamp, Formatter.TimeValue)
-                          + (model.outgoing ? (model.delivered ? " ✓" : " …") : "")
+                          + (!model.outgoing ? "" : model.queued ? " · " + qsTr("waiting to be sent")
+                             : model.delivered ? " ✓" : " …")
                 }
             }
 
@@ -452,6 +467,7 @@ Page {
                 messageId: model.messageId
                 timestamp: model.timestamp
                 delivered: model.delivered
+                queued: model.queued
                 contact: page.uin
                 player: player
                 onMessage: page.showInfo(text)
@@ -489,15 +505,17 @@ Page {
             font.pixelSize: Theme.fontSizeExtraSmall
         }
 
+        // The outbox.
         Label {
-            id: failedLabel
-            visible: false
+            visible: page.queued > 0 && !page.blocked
             x: Theme.horizontalPageMargin
             width: parent.width - 2 * x
             wrapMode: Text.Wrap
-            color: Theme.errorColor
+            color: Theme.highlightColor
             font.pixelSize: Theme.fontSizeExtraSmall
-            text: qsTr("The last message could not be delivered.")
+            text: account.state !== 2
+                  ? qsTr("%n message(s) waiting: they are sent when you are online.", "", page.queued)
+                  : qsTr("%n message(s) waiting: they are sent when %1 comes online.", "", page.queued).arg(page.name)
         }
 
         Label {
@@ -511,13 +529,14 @@ Page {
         }
 
         Label {
-            visible: !page.blocked && account.contacts.contains(page.uin) && page.presence === Presence.Offline && account.state === 2
+            visible: !page.blocked && page.queued === 0 && account.isContact(page.uin)
+                     && page.presence === Presence.Offline && account.state === 2
             x: Theme.horizontalPageMargin
             width: parent.width - 2 * x
             wrapMode: Text.Wrap
             color: Theme.secondaryHighlightColor
             font.pixelSize: Theme.fontSizeExtraSmall
-            text: qsTr("%1 is offline; the message will be delivered if the server keeps offline messages.").arg(page.name)
+            text: qsTr("%1 is offline. Messages are kept (by the server, or here until they come online) and arrive when they are back.").arg(page.name)
         }
 
         // Send a photo, take one, or send a file.
@@ -662,11 +681,10 @@ Page {
                     right: emojiButton.left
                     bottom: parent.bottom
                 }
-                placeholderText: account.state === 2 ? qsTr("Message") : qsTr("Not connected")
-                enabled: account.state === 2
+                placeholderText: account.state === 2 ? qsTr("Message") : qsTr("Message (sent when you are online)")
+                enabled: account.hasAccount
                 onActiveFocusChanged: if (activeFocus) page.panel = ""
                 onTextChanged: {
-                    failedLabel.visible = false
                     if (text.length === 0) {
                         page.stopTyping()
                         return
@@ -718,7 +736,8 @@ Page {
                     bottomMargin: Theme.paddingMedium
                 }
                 icon.source: hasText ? "image://theme/icon-m-send" : "image://theme/icon-m-mic"
-                enabled: hasText ? account.state === 2 : page.canSend
+                // Text can be written offline (it waits in the outbox).
+                enabled: hasText ? account.hasAccount && !page.blocked : page.canSend
                 onClicked: hasText ? page.send() : page.startVoice()
             }
         }

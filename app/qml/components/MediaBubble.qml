@@ -19,6 +19,7 @@ Item {
     property var messageId
     property var timestamp
     property bool delivered
+    property bool queued
     property string contact
     property real maxWidth: 400
     // The conversation's audio player (one for all voice messages).
@@ -39,7 +40,8 @@ Item {
     readonly property real progress: fileSize > 0 ? Math.min(1, fileDone / fileSize) : 0
     readonly property string localUrl: filePath.length > 0 ? "file://" + filePath.split("/").map(encodeURIComponent).join("/") : ""
     readonly property string timeText: Format.formatDate(timestamp, Formatter.TimeValue)
-                                       + (outgoing ? (fileState === stFailed ? " ⚠" : delivered ? " ✓" : " …") : "")
+                                       + (outgoing ? (fileState === stFailed ? " ⚠" : queued ? " · " + qsTr("waiting")
+                                                      : delivered ? " ✓" : " …") : "")
 
     width: mediaType === 2 ? voice.width : mediaType === 3 ? stickerBox.width : photoBox.width
     height: mediaType === 2 ? voice.height : mediaType === 3 ? stickerBox.height : photoBox.height

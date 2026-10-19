@@ -182,7 +182,13 @@ public:
     Q_INVOKABLE void setStatus(int status, const QString &message = QString());
 
     Q_INVOKABLE ChatModel *chat(const QString &uin);
+    // Sends a message, or keeps it in the outbox (sent once we are online,
+    // or once they are, if the server cannot take it for them now).
     Q_INVOKABLE bool sendMessage(const QString &uin, const QString &text);
+    // Outbox: send one message now / delete it instead.
+    Q_INVOKABLE void sendQueuedNow(const QString &uin, qint64 messageId);
+    Q_INVOKABLE void deleteQueued(const QString &uin, qint64 messageId);
+    Q_INVOKABLE int queuedCount(const QString &uin) const;
     Q_INVOKABLE void markRead(const QString &uin);
     // Deletes the history with someone who is not in the contact list.
     Q_INVOKABLE void deleteConversation(const QString &uin);
@@ -270,6 +276,9 @@ signals:
     // For notifications: someone wrote to us while we were not looking.
     void messageReceived(const QString &uin, const QString &name, const QString &text);
     void messageFailed(const QString &uin);
+    // A message went to the outbox (could not be sent or stored now).
+    void messageQueued(const QString &uin);
+    void queueChanged(const QString &uin);
     void authorizationRequested(const QString &uin, const QString &name, const QString &reason);
     void authorizationAnswered(const QString &uin, bool granted);
     void groupsChanged();
@@ -320,6 +329,8 @@ private slots:
     void onOwnProfileSaved(bool ok);
     void requestNextIcon();
     void onLivenessTimeout();
+    void sendNextQueued();
+    void checkUnanswered();
     void reconnect();
 
 private:
@@ -341,6 +352,13 @@ private:
     void finishSearch();
     void applyFileSettings();
     void handleIcon(const QString &contact, const QByteArray &hash, int type, int hashType);
+    // Puts text on the wire for a stored message (its acknowledgement marks
+    // it delivered, an error puts it in the outbox).
+    void transmit(const QString &uin, const QString &text, qint64 historyId);
+    void setQueued(const QString &uin, qint64 historyId, bool queued);
+    // Sends the outbox (contact empty: everyone not known to be offline).
+    void flushQueue(const QString &contact = QString());
+    static QString wireTextOf(const StoredMessage &m);
     void uploadOwnIcon();
 
     QString m_configDir;
@@ -368,6 +386,13 @@ private:
     HistoryStore m_history;
     QHash<QString, QPointer<ChatModel>> m_chats;
     QHash<uint, QPair<QString, qint64>> m_pendingAcks; // OSCAR id -> (contact, history id)
+    QHash<uint, QDateTime> m_pendingSince;
+    // Moved to the outbox for lack of an answer; a late acknowledgement
+    // still counts.
+    QHash<uint, QPair<QString, qint64>> m_lateAcks;
+    QTimer m_ackTimer;
+    QVector<QPair<QString, qint64>> m_sendQueue;     // (contact, history id) to send now
+    QTimer m_sendTimer;
     uint m_nextMessageId = 1;
 
     QTimer m_reconnectTimer;

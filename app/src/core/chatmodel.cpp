@@ -42,6 +42,7 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
     case TransferIdRole: return m.transferId;
     case MediaTypeRole: return m.mediaType;
     case MediaInfoRole: return m.mediaInfo;
+    case QueuedRole: return m.queued;
     }
     return QVariant();
 }
@@ -65,6 +66,7 @@ QHash<int, QByteArray> ChatModel::roleNames() const
         { TransferIdRole, "transferId" },
         { MediaTypeRole, "mediaType" },
         { MediaInfoRole, "mediaInfo" },
+        { QueuedRole, "queued" },
     };
 }
 
@@ -81,11 +83,33 @@ void ChatModel::setDelivered(qint64 id)
     for (int i = m_messages.size() - 1; i >= 0; --i) {
         if (m_messages[i].id == id) {
             m_messages[i].delivered = true;
+            m_messages[i].queued = false;
             const QModelIndex idx = index(i);
-            emit dataChanged(idx, idx, { DeliveredRole });
+            emit dataChanged(idx, idx, { DeliveredRole, QueuedRole });
             return;
         }
     }
+}
+
+void ChatModel::setQueued(qint64 id, bool queued)
+{
+    const int row = rowOf(id);
+    if (row < 0 || m_messages[row].queued == queued)
+        return;
+    m_messages[row].queued = queued;
+    const QModelIndex idx = index(row);
+    emit dataChanged(idx, idx, { QueuedRole });
+}
+
+void ChatModel::remove(qint64 id)
+{
+    const int row = rowOf(id);
+    if (row < 0)
+        return;
+    beginRemoveRows(QModelIndex(), row, row);
+    m_messages.remove(row);
+    endRemoveRows();
+    emit countChanged();
 }
 
 int ChatModel::rowOf(qint64 id) const

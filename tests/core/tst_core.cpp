@@ -305,6 +305,7 @@ private slots:
     void profilePicture();
     void profileDetails();
     void media();
+    void outbox();
     void phase2SignOut();
 
     void historySurvivesRestart()
@@ -559,7 +560,11 @@ void TestCore::offlineMessage()
     b.disconnectAccount();
     QTest::qWait(1500);
     QVERIFY(a.sendMessage(QStringLiteral("100002"), QStringLiteral("sent while you were away")));
-    QTest::qWait(4000);
+    // The server keeps it for them (and says so): delivered, not in the outbox.
+    ChatModel *aChat = a.chat(QStringLiteral("100002"));
+    QVERIFY(waitFor([&] { return lastRow(aChat, ChatModel::DeliveredRole).toBool(); }, 5000));
+    QCOMPARE(lastRow(aChat, ChatModel::QueuedRole).toBool(), false);
+    QTest::qWait(1000);
     b.connectAccount();
     QVERIFY(waitFor([&] { return b.state() == AccountManager::Online; }, 15000));
     ChatModel *chat = b.chat(QStringLiteral("100001"));
@@ -737,6 +742,53 @@ void TestCore::media()
     StoredMessage m = b.storedMessage(lastRow(bChat, ChatModel::IdRole).toLongLong());
     QCOMPARE(m.kind, int(StoredMessage::Media));
     QCOMPARE(m.fileState, int(TransferManager::Failed));
+}
+
+void TestCore::outbox()
+{
+    AccountManager &a = *m_a;
+    AccountManager &b = *m_b;
+    QVERIFY(a.isContact(QStringLiteral("100002")));
+    b.disconnectAccount();
+    a.disconnectAccount();
+    QTest::qWait(1500);
+    ChatModel *aChat = a.chat(QStringLiteral("100002"));
+    ChatModel *bChat = b.chat(QStringLiteral("100001"));
+
+    // Written while we are offline: kept in the outbox.
+    QVERIFY(a.sendMessage(QStringLiteral("100002"), QStringLiteral("from the outbox")));
+    QCOMPARE(lastRow(aChat, ChatModel::QueuedRole).toBool(), true);
+    QVERIFY(a.sendMessage(QStringLiteral("100002"), QStringLiteral("changed my mind")));
+    QCOMPARE(a.queuedCount(QStringLiteral("100002")), 2);
+    a.deleteQueued(QStringLiteral("100002"), lastRow(aChat, ChatModel::IdRole).toLongLong());
+    QCOMPARE(a.queuedCount(QStringLiteral("100002")), 1);
+    QCOMPARE(lastRow(aChat, ChatModel::TextRole).toString(), QStringLiteral("from the outbox"));
+
+    // Back online, but they are still offline (and on our list): it waits.
+    a.connectAccount();
+    QVERIFY(waitFor([&] { return a.state() == AccountManager::Online; }, 15000));
+    QTest::qWait(6000);
+    QCOMPARE(a.queuedCount(QStringLiteral("100002")), 1);
+
+    // They come online: it goes, and is delivered once.
+    const int before = bChat->rowCount();
+    b.connectAccount();
+    QVERIFY(waitFor([&] { return b.state() == AccountManager::Online; }, 15000));
+    QVERIFY2(waitFor([&] { return a.queuedCount(QStringLiteral("100002")) == 0; }, 15000), "outbox not sent");
+    QVERIFY(waitFor([&] { return lastRow(aChat, ChatModel::DeliveredRole).toBool(); }, 10000));
+    auto count = [&]() {
+        int n = 0;
+        for (int i = before; i < bChat->rowCount(); ++i)
+            if (bChat->data(bChat->index(i), ChatModel::TextRole).toString() == QLatin1String("from the outbox"))
+                ++n;
+        return n;
+    };
+    QVERIFY(waitFor([&] { return count() == 1; }, 10000));
+    QTest::qWait(2000);
+    QCOMPARE(count(), 1);
+
+    // Survives a restart of the app: the outbox is in the history.
+    QCOMPARE(lastRow(aChat, ChatModel::QueuedRole).toBool(), false);
 }
 
 void TestCore::phase2SignOut()

@@ -20,6 +20,9 @@ struct StoredMessage
     QDateTime timestamp;
     bool delivered = false;
     bool read = true;
+    // Outgoing, not sent yet: waiting for us to be online or for them to
+    // come online (the outbox).
+    bool queued = false;
 
     int kind = Text;
     // Files (kind == File):
@@ -54,7 +57,11 @@ public:
     bool isOpen() const;
 
     qint64 addMessage(const StoredMessage &m);
-    void setDelivered(qint64 id);
+    void setDelivered(qint64 id);   // also takes it out of the outbox
+    void setQueued(qint64 id, bool queued);
+    // The outbox, oldest first (contact empty: everyone's).
+    QVector<StoredMessage> queuedMessages(const QString &contact = QString()) const;
+    void deleteMessage(qint64 id);
     // size < 0: unchanged.
     void updateFile(qint64 id, int state, const QString &path, const QString &url, qint64 size = -1);
     StoredMessage message(qint64 id) const;

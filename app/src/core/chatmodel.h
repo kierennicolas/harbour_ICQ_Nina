@@ -32,7 +32,8 @@ public:
         FileDoneRole,     // bytes transferred so far
         TransferIdRole,
         MediaTypeRole,    // MediaLink::Type
-        MediaInfoRole
+        MediaInfoRole,
+        QueuedRole        // in the outbox: sent when possible
     };
 
     ChatModel(const QString &contact, HistoryStore *store, QObject *parent = nullptr);
@@ -46,6 +47,8 @@ public:
     // Adds a message (already stored) at the end.
     void append(const StoredMessage &m);
     void setDelivered(qint64 id);
+    void setQueued(qint64 id, bool queued);
+    void remove(qint64 id);
     void updateFile(qint64 id, int state, const QString &path, const QString &url, qint64 size = -1);
     void setFileDone(qint64 id, qint64 bytes);
     void reload();

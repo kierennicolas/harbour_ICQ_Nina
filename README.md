@@ -72,6 +72,10 @@ search and info, ICQ offline retrieval, the rendezvous proxy handshake).
   1600 px, without their location data
 - the number search only accepts real ICQ numbers (up to 4294967295) and
   shows exact matches
+- an outbox: messages written while you are offline, or that the server
+  will not keep for someone who is offline, wait (in the history, so a
+  restart keeps them) and are sent when you are online / when they come
+  online; "Send now" and "Delete" on a waiting message
 
 Next (Phase 4): AIM extras, multiple accounts, chat rooms, share-to-app.
 
