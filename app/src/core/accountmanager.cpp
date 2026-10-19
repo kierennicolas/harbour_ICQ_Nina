@@ -181,6 +181,10 @@ AccountManager::AccountManager(const QString &configDir, const QString &dataDir,
     m_profileTimer.setSingleShot(true);
     m_profileTimer.setInterval(15000);
     connect(&m_profileTimer, &QTimer::timeout, this, [this]() {
+        if (m_verifyingProfile) {
+            finishProfileSave(true, QString()); // saved; could not read it back
+            return;
+        }
         if (!m_savingProfile)
             return;
         m_savingProfile = false;
@@ -536,7 +540,9 @@ void AccountManager::dropClient()
         w.requested = false;
     if (m_savingProfile) {
         m_savingProfile = false;
+        m_verifyingProfile = false;
         m_profileTimer.stop();
+        m_profileTimer.setInterval(15000);
         emit savingProfileChanged();
     }
     c->close();
@@ -1643,6 +1649,11 @@ void AccountManager::onLongInfo(const QString &contact)
         m_nickname = info.value(QStringLiteral("nickname")).toString();
         m_authRequired = g.needsAuth.get() ? 1 : 0;
         emit ownInfoChanged();
+        if (m_verifyingProfile) {
+            const QStringList lost = profileFieldsNotKept(info);
+            finishProfileSave(true, lost.isEmpty() ? QString()
+                              : tr("Saved, but the server does not keep: %1.").arg(lost.join(QStringLiteral(", "))));
+        }
     }
     emit userInfoReceived(contact, info);
 }
@@ -2087,6 +2098,8 @@ bool AccountManager::saveProfile(const QVariantMap &f)
         qDeleteAll(list);
         return false;
     }
+    m_profileRequested = f;
+    m_verifyingProfile = false;
     m_savingProfile = true;
     m_profileTimer.start();
     emit savingProfileChanged();
@@ -2095,13 +2108,54 @@ bool AccountManager::saveProfile(const QVariantMap &f)
 
 void AccountManager::onOwnProfileSaved(bool ok)
 {
-    if (!m_savingProfile)
+    if (!m_savingProfile || m_verifyingProfile)
         return; // e.g. the "authorization required" switch
-    m_savingProfile = false;
+    if (!ok || !m_client) {
+        finishProfileSave(false, tr("The server did not accept the changes."));
+        return;
+    }
+    // Accepted; now see what the server actually kept.
+    m_verifyingProfile = true;
+    m_profileTimer.start(10000);
+    m_client->requestFullInfo(m_uin);
+}
+
+void AccountManager::finishProfileSave(bool ok, const QString &message)
+{
     m_profileTimer.stop();
-    emit savingProfileChanged();
-    emit profileSaved(ok, ok ? QString() : tr("The server did not accept the changes."));
-    if (ok && m_client)
-        m_client->requestFullInfo(m_uin);
+    m_profileTimer.setInterval(15000);
+    m_verifyingProfile = false;
+    m_profileRequested.clear();
+    if (m_savingProfile) {
+        m_savingProfile = false;
+        emit savingProfileChanged();
+    }
+    emit profileSaved(ok, message);
+}
+
+QStringList AccountManager::profileFieldsNotKept(const QVariantMap &info) const
+{
+    struct Field { const char *key; const char *label; };
+    static const Field fields[] = {
+        { "nickname", QT_TR_NOOP("nickname") }, { "firstName", QT_TR_NOOP("first name") },
+        { "lastName", QT_TR_NOOP("last name") }, { "email", QT_TR_NOOP("email") },
+        { "city", QT_TR_NOOP("city") }, { "state", QT_TR_NOOP("state or region") },
+        { "homepage", QT_TR_NOOP("home page") }, { "about", QT_TR_NOOP("about me") },
+    };
+    QStringList out;
+    for (const Field &fd : fields) {
+        const QString key = QLatin1String(fd.key);
+        if (!m_profileRequested.contains(key))
+            continue;
+        if (m_profileRequested.value(key).toString().trimmed() != info.value(key).toString().trimmed())
+            out << tr(fd.label);
+    }
+    if (m_profileRequested.contains(QStringLiteral("gender"))
+            && m_profileRequested.value(QStringLiteral("gender")).toInt() != info.value(QStringLiteral("gender")).toInt())
+        out << tr("gender");
+    const QDate wanted = m_profileRequested.value(QStringLiteral("birthday")).toDate();
+    if (wanted != info.value(QStringLiteral("birthday")).toDate() && (wanted.isValid() || info.contains(QStringLiteral("birthday"))))
+        out << tr("birthday");
+    return out;
 }
 

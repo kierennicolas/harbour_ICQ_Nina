@@ -426,6 +426,12 @@ private:
     bool m_uploadWhenConnected = false;
     bool m_savingProfile = false;
     QTimer m_profileTimer;
+    // After the server confirms a save: what was asked for, compared with
+    // what the server then reports (servers keep only what they support).
+    QVariantMap m_profileRequested;
+    bool m_verifyingProfile = false;
+    void finishProfileSave(bool ok, const QString &message);
+    QStringList profileFieldsNotKept(const QVariantMap &info) const;
     bool m_proxyTransfers = true;
     StickerStore *m_stickers = nullptr;
     MediaManager *m_media = nullptr;

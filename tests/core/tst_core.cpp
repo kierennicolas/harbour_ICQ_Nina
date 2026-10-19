@@ -634,6 +634,9 @@ void TestCore::profileDetails()
     QVERIFY(a.savingProfile());
     QVERIFY(waitFor([&] { return saved.count() == 1; }, 15000));
     QVERIFY2(saved.first().at(0).toBool(), qPrintable(saved.first().at(1).toString()));
+    // Everything was kept, so nothing to report.
+    QCOMPARE(saved.first().at(1).toString(), QString());
+    QVERIFY(!a.savingProfile());
 
     QSignalSpy info(&b, &AccountManager::userInfoReceived);
     b.requestUserInfo(QStringLiteral("100001"));

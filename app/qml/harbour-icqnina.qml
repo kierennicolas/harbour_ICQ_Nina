@@ -151,7 +151,7 @@ ApplicationWindow {
         }
         onContactAddedYou: app.notify(uin, name, qsTr("Added you to their contact list"))
         onContactEditFailed: app.showError(message)
-        onProfileSaved: app.showError(ok ? qsTr("Your profile was saved") : message)
+        onProfileSaved: app.showError(message.length > 0 ? message : ok ? qsTr("Your profile was saved") : qsTr("Not saved"))
     }
 
     Connections {

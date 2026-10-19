@@ -12,6 +12,10 @@ Dialog {
     // Filled once from what the directory says (later answers do not
     // overwrite your typing).
     property bool loaded: false
+    // Tested against NINA (October 2026): it keeps nickname, names, city,
+    // region and "about me", but not email, home page, gender or birthday.
+    // After saving, the app also checks what the server kept.
+    readonly property bool onNina: account.serverProfile.indexOf("nina") === 0
     property var birthday: null      // Date or null
     property string pickedPicture
 
@@ -192,6 +196,15 @@ Dialog {
                 EnterKey.iconSource: "image://theme/icon-m-enter-next"
                 EnterKey.onClicked: city.focus = true
             }
+            Label {
+                visible: dialog.onNina
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                wrapMode: Text.Wrap
+                font.pixelSize: Theme.fontSizeExtraSmall
+                color: Theme.secondaryHighlightColor
+                text: qsTr("NINA does not keep email addresses at the moment.")
+            }
             TextField {
                 id: city
                 width: parent.width
@@ -243,6 +256,15 @@ Dialog {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: qsTr("Clear birthday")
                 onClicked: dialog.birthday = null
+            }
+            Label {
+                visible: dialog.onNina
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                wrapMode: Text.Wrap
+                font.pixelSize: Theme.fontSizeExtraSmall
+                color: Theme.secondaryHighlightColor
+                text: qsTr("NINA does not keep the home page, gender or birthday at the moment.")
             }
 
             TextArea {
