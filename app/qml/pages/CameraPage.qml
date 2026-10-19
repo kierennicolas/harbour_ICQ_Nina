@@ -16,26 +16,64 @@ Page {
     signal photoTaken(string path)
 
     readonly property bool hasFront: QtMultimedia.availableCameras.length > 1
+    // The camera is opened only while this page is on top (and closed for a
+    // moment when switching cameras): opening it twice, or while the page is
+    // still sliding in, makes the phone's camera library refuse it.
+    property bool reloading: false
+    property bool ready: false
+    property string errorText
+    readonly property bool wanted: ready && !reloading && page.status === PageStatus.Active
+                                   && page.captured.length === 0 && Qt.application.active
 
-    Rectangle {
-        anchors.fill: parent
-        color: "black"
+    function reload() {
+        errorText = ""
+        reloading = true
+        reloadTimer.restart()
+    }
+
+    function switchCamera() {
+        front = !front
+        reloading = true
+        // Pick the camera while it is closed.
+        var wantedPosition = front ? Camera.FrontFace : Camera.BackFace
+        for (var i = 0; i < QtMultimedia.availableCameras.length; ++i) {
+            var device = QtMultimedia.availableCameras[i]
+            if (device.position === wantedPosition) {
+                camera.deviceId = device.deviceId
+                break
+            }
+        }
+        reloadTimer.restart()
+    }
+
+    onStatusChanged: if (status === PageStatus.Active && !ready) startTimer.start()
+
+    Timer {
+        id: startTimer
+        interval: 250
+        onTriggered: page.ready = true
+    }
+
+    Timer {
+        id: reloadTimer
+        interval: 600
+        onTriggered: page.reloading = false
     }
 
     Camera {
         id: camera
-        deviceId: page.front && page.hasFront ? QtMultimedia.availableCameras[1].deviceId
-                                              : QtMultimedia.availableCameras.length > 0 ? QtMultimedia.availableCameras[0].deviceId : ""
         captureMode: Camera.CaptureStillImage
-        cameraState: page.status === PageStatus.Active && page.captured.length === 0 && Qt.application.active
-                     ? Camera.ActiveState : Camera.LoadedState
+        cameraState: page.wanted ? Camera.ActiveState : Camera.UnloadedState
         flash.mode: Camera.FlashOff
-        focus.focusMode: Camera.FocusContinuous
         imageCapture {
             onImageSaved: page.captured = path
-            onCaptureFailed: errorLabel.text = message
+            onCaptureFailed: page.errorText = message
         }
-        onError: errorLabel.text = errorString
+        onError: {
+            console.warn("camera error", errorCode, errorString, "availability", availability)
+            page.errorText = errorString
+        }
+        onCameraStatusChanged: if (cameraStatus === Camera.ActiveStatus) page.errorText = ""
     }
 
     VideoOutput {
@@ -58,15 +96,35 @@ Page {
         sourceSize.height: 1600
     }
 
-    Label {
-        id: errorLabel
+    Column {
         anchors.centerIn: parent
         width: parent.width - 2 * Theme.horizontalPageMargin
-        wrapMode: Text.Wrap
-        horizontalAlignment: Text.AlignHCenter
-        visible: text.length > 0
-        color: "white"
-        text: QtMultimedia.availableCameras.length === 0 ? qsTr("No camera found") : ""
+        spacing: Theme.paddingLarge
+        visible: page.captured.length === 0 && (page.errorText.length > 0 || QtMultimedia.availableCameras.length === 0)
+
+        Label {
+            width: parent.width
+            wrapMode: Text.Wrap
+            horizontalAlignment: Text.AlignHCenter
+            color: "white"
+            text: QtMultimedia.availableCameras.length === 0 ? qsTr("No camera found")
+                  : qsTr("The camera cannot be used right now (%1).").arg(page.errorText)
+        }
+        Label {
+            width: parent.width
+            wrapMode: Text.Wrap
+            horizontalAlignment: Text.AlignHCenter
+            font.pixelSize: Theme.fontSizeSmall
+            color: Theme.rgba("white", 0.7)
+            visible: QtMultimedia.availableCameras.length > 0
+            text: qsTr("Another app may be using it (the Camera app, or an Android app). Close it and try again, or choose a photo from the gallery instead.")
+        }
+        Button {
+            anchors.horizontalCenter: parent.horizontalCenter
+            visible: QtMultimedia.availableCameras.length > 0
+            text: qsTr("Try again")
+            onClicked: page.reload()
+        }
     }
 
     // Shutter and switches.
@@ -104,7 +162,7 @@ Page {
                 anchors.fill: parent
                 enabled: camera.imageCapture.ready
                 onClicked: {
-                    errorLabel.text = ""
+                    page.errorText = ""
                     camera.imageCapture.captureToLocation(page.savePath)
                 }
             }
@@ -118,7 +176,7 @@ Page {
                 verticalCenter: parent.verticalCenter
             }
             icon.source: "image://theme/icon-m-rotate?white"
-            onClicked: page.front = !page.front
+            onClicked: page.switchCamera()
         }
     }
 
