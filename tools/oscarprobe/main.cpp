@@ -76,13 +76,16 @@ void traceHandler(QtMsgType type, const QMessageLogContext &ctx, const QString &
             "Ignoring offline message|ignoring our own proposal|proxy requested|redirect or proxy request|got port|"
             "other user (cancelled|acceptetd)|listening for connections|listening failed|connection failed somehow|"
             "socket error|Received (basic|work|more|notes|email|interest|organization|short)|"
-            "Can't add item|SSI Update successful|Acknowledgement code)"));
+            "Can't add item|SSI Update successful|Acknowledgement code|"
+            "icon reply: \\d+ bytes|ICQ meta reply|server acked icon upload|wrong service|no cookie)"));
         if (!safe.match(line).hasMatch())
             return;
         static const QRegularExpression tlv(QStringLiteral("^(found TLV\\(\\d+\\)( \\[[A-Z ]+\\])?).*$"));
         line.replace(tlv, QStringLiteral("\\1"));
         static const QRegularExpression host(QStringLiteral("^Connect to: host .*?(port \\d+ encrypted \\w+).*$"));
         line.replace(host, QStringLiteral("Connect to: host <server> \\1"));
+        static const QRegularExpression ack(QStringLiteral("^(server acked icon upload).*$"));
+        line.replace(ack, QStringLiteral("\\1"));
         static const QRegularExpression reconnect(QStringLiteral("^We should reconnect.*$"));
         line.replace(reconnect, QStringLiteral("We should reconnect to the BOS server"));
     }

@@ -49,8 +49,8 @@ bool ICQUserInfoUpdateTask::forMe( const Transfer* transfer ) const
 
 	// harbour_icq_nina: the answer to our request (same SNAC id) is ours
 	// whatever its subtype (AOL: 0x0C3F; other servers may differ).
-	kDebug(OSCAR_RAW_DEBUG) << "ICQ meta reply to own info update: type 0x" + QString::number( requestType(), 16 )
-	                           + " subtype 0x" + QString::number( requestSubType(), 16 );
+	kDebug(OSCAR_RAW_DEBUG) << "ICQ meta reply to own info update: type" << qPrintable( QString::number( requestType(), 16 ) )
+	                        << "subtype" << qPrintable( QString::number( requestSubType(), 16 ) );
 	return requestType() == 0x07DA;
 }
 
@@ -66,7 +66,7 @@ bool ICQUserInfoUpdateTask::take( Transfer* transfer )
 		buffer.skipBytes( 12 );
 		
 		const Oscar::BYTE result = buffer.getByte();
-		kDebug(OSCAR_RAW_DEBUG) << "ICQ meta reply result 0x" + QString::number( result, 16 );
+		kDebug(OSCAR_RAW_DEBUG) << "ICQ meta reply result" << qPrintable( QString::number( result, 16 ) );
 		if ( result == 0x0A )
 		{
 			kDebug(OSCAR_RAW_DEBUG) << "Own user info was saved.";
