@@ -32,7 +32,7 @@ first=$?
 sleep 60
 
 # 2. The same over SSL/TLS.
-run --host slogin.oscar.nina.chat --port 5190 --tls --identity icq65 --multiconn 1 --wait 40 --profile-test
+run --host slogin.oscar.nina.chat --port 5190 --tls --identity icq65 --multiconn 1 --wait 30
 second=$?
 
 # 3. Contact list editing: add our own number to our list and remove it
@@ -78,16 +78,10 @@ if [ -n "${NINA_EXTRA:-}" ]; then
   run --host login.oscar.nina.chat --port 5190 --identity icq65 --multiconn 1 --wait 30 "${extra[@]}"
 fi
 
-# 6. The app's own core against NINA (profile saving end to end, like the
-#    profile page: "about" set to a marker, checked, then put back).
-CHECK="$(dirname "$PROBE")/../ninacheck/ninacheck"
-if [ -x "$CHECK" ]; then
-  for profile in nina nina-tls; do
-    sleep 60
-    echo "== ninacheck $profile"
-    timeout 150 "$CHECK" "$profile" 2>&1 | grep -E 'CHECK-' | grep -v XDG_RUNTIME_DIR
-  done
-fi
+# (tools/ninacheck runs the app core's profile save against NINA; it writes
+# to the account, so it is only run by hand. Profile writes are not part of
+# the regular run: NINA stopped answering them for the test account after a
+# series of test writes on 2026-10-19.)
 
 echo "nina probe: plain=$first tls=$second ft_proxy=$proxy_rc"
 exit $first

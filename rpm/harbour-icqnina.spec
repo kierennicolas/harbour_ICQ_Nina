@@ -1,6 +1,6 @@
 Name:       harbour-icqnina
 Summary:    ICQ and AIM messaging on the NINA service
-Version:    0.3.6
+Version:    0.3.7
 Release:    1
 Group:      Qt/Qt
 License:    GPLv3+ and GPLv2+
