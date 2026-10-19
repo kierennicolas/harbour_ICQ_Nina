@@ -19,7 +19,9 @@
 #include <QTimer>
 
 #include <cstdio>
+#include <memory>
 
+#include "buffer.h"
 #include "client.h"
 #include "contactmanager.h"
 #include "filetransferhandler.h"
@@ -211,6 +213,8 @@ int main(int argc, char **argv)
         {QStringLiteral("icon-server"), QStringLiteral("Connect to the buddy icon (BART) server and fetch our own picture.")},
         {QStringLiteral("icon-roundtrip"), QStringLiteral("Upload our own picture again, unchanged (needs --icon-server).")},
         {QStringLiteral("profile-roundtrip"), QStringLiteral("Write our own 'about' text back unchanged and report the server's answer.")},
+        {QStringLiteral("profile-test"), QStringLiteral("Which way of saving our own details the server keeps: write a marker into our 'about' text "
+                                                         "with the ICQ 2003 TLV write and with the classic write, read it back, then put the original back.")},
     });
     p.process(app);
 
@@ -372,6 +376,54 @@ int main(int argc, char **argv)
                 client.connectToIconServer();
             });
         }
+        if (p.isSet(QStringLiteral("profile-test"))) {
+            // Our own "about" text only; put back at the end. Contents are
+            // never printed (public logs), only whether they match.
+            auto original = std::make_shared<QByteArray>();
+            const QByteArray stamp = QDateTime::currentDateTimeUtc().toString(QStringLiteral("hhmmss")).toLatin1();
+            const QByteArray markerA = "icqnina-probe-tlv-" + stamp;
+            const QByteArray markerB = "icqnina-probe-classic-" + stamp;
+            auto writeTlv = [&client, uin](const QByteArray &text) {
+                ICQNotesInfo *n = new ICQNotesInfo;
+                n->notes.set(text);
+                QList<ICQInfoBase*> list;
+                list << n;
+                if (!client.updateProfile(list))
+                    delete n;
+            };
+            auto writeClassic = [&client](const QByteArray &text) {
+                Buffer b;
+                b.addLELNTS(text.constData());
+                client.sendIcqMetaWrite(0x0406, b.buffer());
+            };
+            auto check = [&client, uin](const char *what, const QByteArray &expected, const QByteArray &orig) {
+                const QByteArray got = client.getNotesInfo(uin).notes.get();
+                out(QStringLiteral("PROFILE-TEST %1 stored=%2 (read back %3 bytes%4)").arg(QLatin1String(what))
+                    .arg(got == expected ? "yes" : "no").arg(got.size())
+                    .arg(got == orig ? ", the original" : ""));
+            };
+            client.requestFullInfo(uin);
+            QTimer::singleShot(6000, [&client, uin, original, markerA, writeTlv]() {
+                *original = client.getNotesInfo(uin).notes.get();
+                out(QStringLiteral("PROFILE-TEST original about: %1 bytes; writing a marker (TLV 0x0C3A)").arg(original->size()));
+                writeTlv(markerA);
+            });
+            QTimer::singleShot(9000, [&client, uin]() { client.requestFullInfo(uin); });
+            QTimer::singleShot(14000, [check, markerA, original]() { check("tlv", markerA, *original); });
+            QTimer::singleShot(15000, [markerB, writeClassic]() {
+                out(QStringLiteral("PROFILE-TEST writing a marker (classic 0x0406)"));
+                writeClassic(markerB);
+            });
+            QTimer::singleShot(18000, [&client, uin]() { client.requestFullInfo(uin); });
+            QTimer::singleShot(23000, [check, markerB, original]() { check("classic", markerB, *original); });
+            QTimer::singleShot(24000, [original, writeTlv, writeClassic]() {
+                out(QStringLiteral("PROFILE-TEST putting the original back (both ways)"));
+                writeClassic(*original);
+                writeTlv(*original);
+            });
+            QTimer::singleShot(27000, [&client, uin]() { client.requestFullInfo(uin); });
+            QTimer::singleShot(32000, [check, original]() { check("restore", *original, *original); });
+        }
         if (p.isSet(QStringLiteral("profile-roundtrip"))) {
             client.requestFullInfo(uin);
             QTimer::singleShot(6000, [&client, uin]() {
@@ -520,6 +572,9 @@ int main(int argc, char **argv)
             out(QStringLiteral("ICON-UPLOAD bytes=%1").arg(data.size()));
             client.sendBuddyIcon(data);
         }
+    });
+    QObject::connect(&client, &Client::icqMetaWriteDone, [&](int subtype, bool ok) {
+        out(QStringLiteral("PROFILE-CLASSIC-WRITE 0x%1 %2").arg(subtype, 4, 16, QLatin1Char('0')).arg(ok ? "ok" : "refused"));
     });
     QObject::connect(&client, &Client::ownProfileSaved, [&](bool ok) {
         out(QStringLiteral("PROFILE-SAVED %1").arg(ok ? "ok" : "refused"));

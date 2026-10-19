@@ -59,6 +59,7 @@
 #include "offlinemessagestask.h"
 #include "icqofflinemessagestask.h"
 #include "icquserinfoupdatetask.h"
+#include "icqmetawritetask.h"
 #include "task.h"
 #include "typingnotifytask.h"
 #include "userinfotask.h"
@@ -1901,6 +1902,23 @@ void Client::setAuthorizationRequired( bool required )
 	infoList.append( info );
 	if ( !updateProfile( infoList ) )
 		delete info;
+}
+
+bool Client::sendIcqMetaWrite( Oscar::WORD subtype, const QByteArray& payload )
+{
+	Connection* c = d->connections.connectionForFamily( 0x0015 );
+	if ( !c )
+		return false;
+	ICQMetaWriteTask* task = new ICQMetaWriteTask( c->rootTask(), subtype, payload );
+	connect( task, SIGNAL(finished()), this, SLOT(metaWriteFinished()) );
+	task->go( Task::AutoDelete );
+	return true;
+}
+
+void Client::metaWriteFinished()
+{
+	if ( ICQMetaWriteTask *task = qobject_cast<ICQMetaWriteTask*>( sender() ) )
+		emit icqMetaWriteDone( task->writeSubtype(), task->success() );
 }
 
 void Client::profileUpdateFinished()

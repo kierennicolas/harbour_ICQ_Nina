@@ -87,6 +87,7 @@ SOURCES += \
     tasks/chatnavservicetask.cpp \
     tasks/chatservicetask.cpp \
     tasks/icquserinfoupdatetask.cpp \
+    tasks/icqmetawritetask.cpp \
     tasks/icqchangepasswordtask.cpp \
     tasks/icqtlvinforequesttask.cpp \
     tasks/icqtlvinfoupdatetask.cpp \
@@ -142,6 +143,7 @@ HEADERS += \
     tasks/icqtlvinfoupdatetask.h \
     tasks/icquserinfotask.h \
     tasks/icquserinfoupdatetask.h \
+    tasks/icqmetawritetask.h \
     tasks/locationrightstask.h \
     tasks/logintask.h \
     tasks/messageacktask.h \

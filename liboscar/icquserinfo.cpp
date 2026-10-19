@@ -91,7 +91,9 @@ void ICQGeneralUserInfo::fill( Buffer* buffer )
 		needsAuth = ( buffer->getByte() == 0x00 );
 		webAware = ( buffer->getByte() == 0x01 );
 		allowsDC = ( buffer->getByte() == 0x01 ); //taken from sim
-		publishEmail = ( buffer->getByte() == 0x01 );
+		// harbour_icq_nina: the byte says "hide" (0 = publish), as in the
+		// write below; Kopete read it the other way round.
+		publishEmail = ( buffer->getByte() == 0x00 );
 	}
 	else
 		kDebug(OSCAR_RAW_DEBUG) << "Couldn't parse ICQ basic user info packet";

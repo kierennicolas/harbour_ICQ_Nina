@@ -356,6 +356,11 @@ public:
 	//! Update the user's ICQ profile
 	bool updateProfile( const QList<ICQInfoBase*>& infoList );
 
+	/** harbour_icq_nina: one classic ICQ directory write (0x07D0 subtype,
+	 * e.g. 0x03EA basic, 0x03FD more, 0x0406 notes); icqMetaWriteDone()
+	 * follows. False if there is no ICQ connection. */
+	bool sendIcqMetaWrite( Oscar::WORD subtype, const QByteArray& payload );
+
 	//! Get buddy icon information for a person
 	void requestBuddyIcon( const QString& user, const QByteArray& hash, Oscar::WORD iconType, Oscar::BYTE hashType );
 
@@ -530,6 +535,8 @@ Q_SIGNALS:
 
 	/** harbour_icq_nina: the answer to updateProfile(). */
 	void ownProfileSaved( bool ok );
+	/** harbour_icq_nina: the answer to sendIcqMetaWrite(). */
+	void icqMetaWriteDone( int subtype, bool ok );
 
 	/** we've received a ICQ password change reply */
 	void icqPasswordChanged( bool error );
@@ -652,6 +659,7 @@ protected Q_SLOTS:
 
 	/* harbour_icq_nina: an ICQUserInfoUpdateTask finished. */
 	void profileUpdateFinished();
+	void metaWriteFinished();
 
 private:
 
