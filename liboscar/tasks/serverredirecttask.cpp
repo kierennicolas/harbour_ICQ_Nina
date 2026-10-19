@@ -18,6 +18,7 @@
 // 02110-1301  USA
 
 #include "serverredirecttask.h"
+#include "oscarutils.h"
 
 #include <kdebug.h>
 
@@ -102,40 +103,35 @@ void ServerRedirectTask::requestNewService()
 
 bool ServerRedirectTask::handleRedirect()
 {
-	//TLVs 0x0D, 0x05, 0x06
-	//family id
-	//server
-	//auth cookie
+	// TLVs 0x0D (family), 0x05 (server[:port]) and 0x06 (auth cookie), in
+	// any order (harbour_icq_nina: Kopete expected 0x0D first).
 	Buffer* b = transfer()->buffer();
-	Oscar::WORD typeD = b->getWord();
-	Oscar::WORD typeDLen = b->getWord();
-	if ( typeD == 0x000D && typeDLen == 0x0002)
+	const QList<TLV> tlvs = b->getTLVList();
+	const TLV family = findTLV( tlvs, 0x000D );
+	if ( family && family.data.size() >= 2 )
 	{
-        Oscar::WORD realService = b->getWord();
+		const Oscar::WORD realService = ( (unsigned char)family.data[0] << 8 ) | (unsigned char)family.data[1];
 		if ( realService != m_service )
 		{
-			kDebug(OSCAR_RAW_DEBUG) << "wrong service for this task";
-			kDebug(OSCAR_RAW_DEBUG ) << "should be " << m_service << " is "
-			                          << realService << endl;
+			kDebug(OSCAR_RAW_DEBUG) << "wrong service for this task: should be" << m_service << "is" << realService;
 			return false;
 		}
 	}
-	else
-		return false;
 
-	TLV server = b->getTLV();
-	m_newHost = QString( server.data );
+	const TLV server = findTLV( tlvs, 0x0005 );
+	m_newHost = QString::fromLatin1( server.data );
 	kDebug(OSCAR_RAW_DEBUG) << "Host for service " << m_service
-	                         << " is " << m_newHost << endl;
+	                         << " is " << m_newHost << " (" << tlvs.size() << " TLVs)" << endl;
 	if ( m_newHost.isEmpty() )
 		return false;
 
-	TLV cookie = b->getTLV();
-
+	const TLV cookie = findTLV( tlvs, 0x0006 );
 	if ( cookie.length == 0 || cookie.data.isEmpty() )
+	{
+		kDebug(OSCAR_RAW_DEBUG) << "no cookie for service" << m_service;
 		return false;
-	else
-		m_cookie = cookie.data;
+	}
+	m_cookie = cookie.data;
 
 	emit haveServer( m_newHost, m_cookie, m_service );
 	return true;

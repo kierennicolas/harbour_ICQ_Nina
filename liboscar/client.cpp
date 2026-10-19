@@ -1564,7 +1564,9 @@ void Client::haveServerForRedirect( const QString& host, const QByteArray& cooki
 	if ( colonPos != -1 )
 	{
 		realHost = host.left( colonPos );
-		realPort = host.rightRef(4).toUInt(); //we only need 4 bytes
+		realPort = host.mid( colonPos + 1 ).toUInt();
+		if ( realPort == 0 || realPort > 65535 )
+			realPort = d->port;
 	}
 	else
 	{

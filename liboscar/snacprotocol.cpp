@@ -83,11 +83,18 @@ Transfer* SnacProtocol::parse( const QByteArray & packet, uint& bytes )
 	char* charPacket = const_cast<char*>( packet.data() );
 	char* snacData;
 	int snacOffset = 10; //default
-	if ( s.flags >= 0x8000  ) //skip the next 8 bytes, we don't care about the snac version ATM
+	if ( s.flags & 0x8000 )
 	{
-		//kDebug(OSCAR_RAW_DEBUG) << "skipping snac version";
-		snacOffset = 18;
-		snacData = charPacket + 24;
+		// harbour_icq_nina: an "extra data" block (word length, then that
+		// many bytes; AOL's is a 6-byte version TLV, other servers differ)
+		// comes before the SNAC's data. Kopete always skipped 8 bytes.
+		int extra = 6;
+		if ( f.length >= 12 )
+			extra = ( ( (unsigned char)charPacket[16] ) << 8 ) | (unsigned char)charPacket[17];
+		if ( 12 + extra > f.length )
+			extra = f.length - 12;
+		snacOffset = 12 + extra;
+		snacData = charPacket + 18 + extra;
 	}
 	else
 	{

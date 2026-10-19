@@ -57,7 +57,9 @@ Page {
                 linkColor: Theme.highlightColor
                 onLinkActivated: Qt.openUrlExternally(link)
                 text: qsTr("Free software under the GNU GPL 3 or later. The OSCAR protocol library comes from KDE's Kopete messenger (GPL 2 or later); "
-                           + "the link upload code from LinkDrop (MIT). Files sent as a link are stored by Litterbox (litterbox.catbox.moe) until the link expires. "
+                           + "the link upload code from LinkDrop (MIT). Files, photos, voice messages and stickers sent as a link are stored by Litterbox (litterbox.catbox.moe) until the link expires. "
+                           + "Emoji pictures: <a href=\"https://github.com/jdecked/twemoji\">Twemoji</a>, © Twitter, Inc and other contributors, CC-BY 4.0. "
+                           + "The \"Pip\" stickers are the app's own. "
                            + "Source: <a href=\"https://github.com/kierennicolas/harbour_ICQ_Nina\">github.com/kierennicolas/harbour_ICQ_Nina</a>")
             }
         }

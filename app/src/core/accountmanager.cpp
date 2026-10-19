@@ -16,6 +16,8 @@
 
 #include "chatmodel.h"
 #include "linkupload.h"
+#include "medialink.h"
+#include "stickerstore.h"
 
 #include "client.h"
 #include "contact.h"
@@ -186,6 +188,9 @@ AccountManager::AccountManager(const QString &configDir, const QString &dataDir,
         emit profileSaved(false, tr("The server did not answer. Your details may not have been saved."));
     });
     m_avatars.open(m_dataDir + QStringLiteral("/icons"));
+    m_stickers = new StickerStore(this);
+    m_stickers->open(QString(), m_dataDir + QStringLiteral("/stickers"));
+    m_media = new MediaManager(this, m_dataDir + QStringLiteral("/media"), m_stickers);
 
     m_reconnectTimer.setSingleShot(true);
     connect(&m_reconnectTimer, &QTimer::timeout, this, &AccountManager::reconnect);
@@ -246,6 +251,7 @@ void AccountManager::loadSettings()
     m_statusMessage = s.value(QStringLiteral("statusMessage")).toString();
     m_stayAwake = s.value(QStringLiteral("stayAwake"), false).toBool();
     m_proxyTransfers = s.value(QStringLiteral("proxyTransfers"), true).toBool();
+    m_autoLoadMedia = s.value(QStringLiteral("autoLoadMedia"), true).toBool();
     m_messageSound = s.value(QStringLiteral("messageSound"), 1).toInt();
     m_customSoundFile = s.value(QStringLiteral("customSoundFile")).toString();
     m_customSoundName = s.value(QStringLiteral("customSoundName")).toString();
@@ -260,6 +266,7 @@ void AccountManager::saveSettings()
         s.clear();
         s.setValue(QStringLiteral("stayAwake"), m_stayAwake);
         s.setValue(QStringLiteral("proxyTransfers"), m_proxyTransfers);
+        s.setValue(QStringLiteral("autoLoadMedia"), m_autoLoadMedia);
         s.setValue(QStringLiteral("messageSound"), m_messageSound);
         s.setValue(QStringLiteral("customSoundFile"), m_customSoundFile);
         s.setValue(QStringLiteral("customSoundName"), m_customSoundName);
@@ -270,6 +277,7 @@ void AccountManager::saveSettings()
     s.setValue(QStringLiteral("customSoundName"), m_customSoundName);
     s.setValue(QStringLiteral("stayAwake"), m_stayAwake);
     s.setValue(QStringLiteral("proxyTransfers"), m_proxyTransfers);
+    s.setValue(QStringLiteral("autoLoadMedia"), m_autoLoadMedia);
     s.setValue(QStringLiteral("uin"), m_uin);
     if (m_rememberPassword && !m_password.isEmpty())
         s.setValue(QStringLiteral("password"), m_password);
@@ -309,7 +317,7 @@ void AccountManager::openHistory()
         bool found = false;
         for (ContactModel::Item &it : items) {
             if (Oscar::normalize(it.uin) == Oscar::normalize(last.contact)) {
-                it.lastMessage = last.text;
+                it.lastMessage = previewOf(last);
                 it.lastMessageTime = last.timestamp;
                 it.unread = m_history.unreadCount(it.uin);
                 found = true;
@@ -571,7 +579,7 @@ void AccountManager::rebuildContactsFromServer()
     for (const StoredMessage &last : m_history.lastMessages()) {
         for (ContactModel::Item &it : items) {
             if (Oscar::normalize(it.uin) == Oscar::normalize(last.contact)) {
-                it.lastMessage = last.text;
+                it.lastMessage = previewOf(last);
                 it.lastMessageTime = last.timestamp;
             }
         }
@@ -847,7 +855,7 @@ bool AccountManager::sendMessage(const QString &uin, const QString &rawText)
     return sendText(uin, rawText, true);
 }
 
-bool AccountManager::sendText(const QString &uin, const QString &rawText, bool record)
+bool AccountManager::sendText(const QString &uin, const QString &rawText, bool record, qint64 ackFor)
 {
     const QString text = rawText.trimmed();
     if (text.isEmpty() || m_state != Online || !m_client)
@@ -866,8 +874,11 @@ bool AccountManager::sendText(const QString &uin, const QString &rawText, bool r
     msg.setTimestamp(QDateTime::currentDateTime());
     msg.setChannel(0x01);
     m_client->sendMessage(msg);
-    if (!record)
+    if (!record) {
+        if (ackFor > 0)
+            m_pendingAcks.insert(id, qMakePair(Oscar::normalize(uin), ackFor));
         return true;
+    }
 
     StoredMessage m;
     m.contact = uin;
@@ -951,21 +962,47 @@ void AccountManager::storeIncoming(const QString &uin, const QString &text, cons
     m.timestamp = when;
     m.delivered = true;
     m.read = seen;
+    const bool media = m_media->classify(m);
     m.id = m_history.addMessage(m);
     if (ChatModel *c = m_chats.value(Oscar::normalize(uin)))
         c->append(m);
+    const QString preview = previewOf(m);
     m_contacts->setTyping(uin, false);
-    m_contacts->setLastMessage(uin, text, when);
+    m_contacts->setLastMessage(uin, preview, when);
     if (!seen) {
         m_contacts->setUnread(uin, m_history.unreadCount(uin));
-        emit messageReceived(uin, displayName(uin), text);
+        emit messageReceived(uin, displayName(uin), preview);
     }
+    // Loading a link tells the file host your address, so only for people
+    // you added.
+    if (media && m.fileState == TransferManager::Offered && m_autoLoadMedia && isContact(uin))
+        m_media->load(uin, m.id);
+}
+
+QString AccountManager::previewOf(const StoredMessage &m)
+{
+    return m.kind == StoredMessage::Media ? MediaLink::summary(m.mediaType, m.mediaInfo) : m.text;
+}
+
+void AccountManager::setAutoLoadMedia(bool load)
+{
+    if (m_autoLoadMedia == load)
+        return;
+    m_autoLoadMedia = load;
+    saveSettings();
+    emit autoLoadMediaChanged();
+}
+
+void AccountManager::setStickerPack(const QString &dir)
+{
+    m_stickers->open(dir, m_dataDir + QStringLiteral("/stickers"));
 }
 
 void AccountManager::deleteConversation(const QString &uin)
 {
     if (isContact(uin))
         return;
+    m_media->forget(m_history.mediaFiles(uin));
     m_history.deleteConversation(uin);
     if (ChatModel *c = m_chats.value(normalized(uin)))
         c->reload();
@@ -1590,11 +1627,12 @@ qint64 AccountManager::addFileMessage(StoredMessage m)
     return m.id;
 }
 
-void AccountManager::updateFileMessage(const QString &uin, qint64 id, int state, const QString &path, const QString &url)
+void AccountManager::updateFileMessage(const QString &uin, qint64 id, int state, const QString &path, const QString &url,
+                                       qint64 size)
 {
-    m_history.updateFile(id, state, path, url);
+    m_history.updateFile(id, state, path, url, size);
     if (ChatModel *c = m_chats.value(normalized(uin)))
-        c->updateFile(id, state, path, url);
+        c->updateFile(id, state, path, url, size);
 }
 
 void AccountManager::setFileMessageProgress(const QString &uin, qint64 id, qint64 bytes)

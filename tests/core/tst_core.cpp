@@ -12,7 +12,11 @@
 #include "accountmanager.h"
 #include "chatmodel.h"
 #include "contactmodel.h"
+#include "emoji.h"
 #include "historystore.h"
+#include "medialink.h"
+#include "mediamanager.h"
+#include "stickerstore.h"
 #include "searchmodel.h"
 #include "transfermanager.h"
 
@@ -68,6 +72,34 @@ class TestCore : public QObject
         a.signIn(uin, pw, true, QStringLiteral("custom"), m_host, 5190, false);
     }
 
+    static QString assets(const QString &name)
+    {
+        return QStringLiteral(ICQNINA_SOURCE_DIR "/app/") + name;
+    }
+
+    static QVariant lastRow(ChatModel *chat, int role)
+    {
+        return chat->rowCount() > 0 ? chat->data(chat->index(chat->rowCount() - 1), role) : QVariant();
+    }
+
+    // A short WAV file (silence) standing in for a voice recording.
+    QString makeWav(const QString &name, int ms)
+    {
+        const int rate = 8000;
+        const QByteArray samples(rate * ms / 1000 * 2, '\0');
+        QByteArray wav;
+        QDataStream out(&wav, QIODevice::WriteOnly);
+        out.setByteOrder(QDataStream::LittleEndian);
+        out.writeRawData("RIFF", 4); out << quint32(36 + samples.size());
+        out.writeRawData("WAVEfmt ", 8); out << quint32(16) << quint16(1) << quint16(1) << quint32(rate)
+                                              << quint32(rate * 2) << quint16(2) << quint16(16);
+        out.writeRawData("data", 4); out << quint32(samples.size());
+        out.writeRawData(samples.constData(), samples.size());
+        const QString path = m_files.path() + QLatin1Char('/') + name;
+        QFile f(path);
+        return f.open(QIODevice::WriteOnly) && f.write(wav) == wav.size() ? path : QString();
+    }
+
 private slots:
     void initTestCase()
     {
@@ -75,6 +107,102 @@ private slots:
         if (m_host.isEmpty())
             m_host = QStringLiteral("127.0.0.1");
         QVERIFY(m_dirA.isValid() && m_dirB.isValid() && m_dirC.isValid());
+    }
+
+    void mediaLinks()
+    {
+        MediaLink l = MediaLink::parse(QStringLiteral("Photo: https://litter.catbox.moe/ab12cd.jpg#icqnina-photo=1600x1200"));
+        QCOMPARE(l.type, int(MediaLink::Photo));
+        QCOMPARE(l.info, QStringLiteral("1600x1200"));
+        QCOMPARE(l.url, QStringLiteral("https://litter.catbox.moe/ab12cd.jpg#icqnina-photo=1600x1200"));
+        l = MediaLink::parse(QStringLiteral("Voice message (0:12): https://litter.catbox.moe/x.ogg#icqnina-voice=12300"));
+        QCOMPARE(l.type, int(MediaLink::Voice));
+        QCOMPARE(l.info, QStringLiteral("12300"));
+        l = MediaLink::parse(QStringLiteral("Sticker: https://litter.catbox.moe/x.png#icqnina-sticker=hello"));
+        QCOMPARE(l.type, int(MediaLink::Sticker));
+        QCOMPARE(l.info, QStringLiteral("hello"));
+        // A bad sticker id is dropped (the picture is still loaded).
+        l = MediaLink::parse(QStringLiteral("Sticker: https://litter.catbox.moe/x.png#icqnina-sticker=../../etc"));
+        QCOMPARE(l.type, int(MediaLink::Sticker));
+        QVERIFY(l.info.isEmpty());
+        // A bare link to a picture on the file host is a photo.
+        QCOMPARE(MediaLink::parse(QStringLiteral(" https://files.catbox.moe/abc.PNG ")).type, int(MediaLink::Photo));
+        // ...but not with other text, on another host, or two links.
+        QCOMPARE(MediaLink::parse(QStringLiteral("look https://files.catbox.moe/abc.png")).type, int(MediaLink::None));
+        QCOMPARE(MediaLink::parse(QStringLiteral("https://example.com/abc.png")).type, int(MediaLink::None));
+        QCOMPARE(MediaLink::parse(QStringLiteral("Photo: https://example.com/a.jpg#icqnina-photo")).type, int(MediaLink::None));
+        QCOMPARE(MediaLink::parse(QStringLiteral("https://litter.catbox.moe/a.jpg https://litter.catbox.moe/b.jpg")).type,
+                 int(MediaLink::None));
+        QCOMPARE(MediaLink::parse(QStringLiteral("Files (1 MB): https://litter.catbox.moe/a.zip")).type, int(MediaLink::None));
+
+        QCOMPARE(MediaLink::messageText(MediaLink::Voice, QStringLiteral("https://litter.catbox.moe/v.ogg"), QStringLiteral("65400")),
+                 QStringLiteral("Voice message (1:05): https://litter.catbox.moe/v.ogg#icqnina-voice=65400"));
+        QCOMPARE(MediaLink::summary(MediaLink::Voice, QStringLiteral("9600")), QStringLiteral("Voice message (0:10)"));
+        // What we send is understood again.
+        const QString sent = MediaLink::messageText(MediaLink::Sticker, QStringLiteral("https://litter.catbox.moe/s.png"), QStringLiteral("u-0123abcd"));
+        l = MediaLink::parse(sent);
+        QCOMPARE(l.type, int(MediaLink::Sticker));
+        QCOMPARE(l.info, QStringLiteral("u-0123abcd"));
+    }
+
+    void emojiText()
+    {
+        Emoji e;
+        QVERIFY(e.load(assets(QStringLiteral("emoji"))));
+        QVERIFY(e.categories().size() >= 5);
+        const QString rich = e.richText(QString::fromUtf8("hi \xF0\x9F\x98\x80 <b>&\nsee https://example.com/a?b=1&c=2."), 20);
+        QVERIFY2(rich.contains(QStringLiteral("1f600.png\" width=\"20\" height=\"20\"")), qPrintable(rich));
+        QVERIFY2(rich.contains(QStringLiteral("&lt;b&gt;&amp;<br>see ")), qPrintable(rich));
+        QVERIFY2(rich.contains(QStringLiteral("<a href=\"https://example.com/a?b=1&amp;c=2\">https://example.com/a?b=1&amp;c=2</a>.")),
+                 qPrintable(rich));
+        QCOMPARE(e.emojiOnly(QString::fromUtf8("\xF0\x9F\x98\x80\xF0\x9F\x98\x80")), 2);
+        QCOMPARE(e.emojiOnly(QString::fromUtf8("\xE2\x9D\xA4\xEF\xB8\x8F")), 1);   // red heart with U+FE0F
+        QCOMPARE(e.emojiOnly(QString::fromUtf8("a\xF0\x9F\x98\x80")), 0);
+        QCOMPARE(e.emojiOnly(QString::fromUtf8("\xF0\x9F\x87\xAC\xF0\x9F\x87\xA7")), 1);   // a flag: two code points
+        QVERIFY(!e.urlOf(QString::fromUtf8("\xF0\x9F\x93\xB7")).isEmpty());
+    }
+
+    void stickerStore()
+    {
+        QTemporaryDir dir;
+        StickerStore s;
+        s.open(assets(QStringLiteral("stickers")), dir.path() + "/mine");
+        QCOMPARE(s.rowCount(), 12);
+        QCOMPARE(s.data(s.index(0), StickerStore::IdRole).toString(), QStringLiteral("hello"));
+        QVERIFY(s.isBundled(QStringLiteral("hello")));
+        QVERIFY(!s.remove(QStringLiteral("hello")));
+
+        QImage big(600, 400, QImage::Format_ARGB32);
+        big.fill(Qt::transparent);
+        QPainter p(&big);
+        p.setBrush(Qt::red);
+        p.drawEllipse(100, 50, 400, 300);
+        p.end();
+        const QString path = dir.path() + "/cat.png";
+        QVERIFY(big.save(path));
+        const QString id = s.add(QUrl::fromLocalFile(path).toString());
+        QVERIFY2(id.startsWith(QStringLiteral("u-")), qPrintable(s.lastError()));
+        QCOMPARE(s.add(path), id); // the same picture again
+        QCOMPARE(s.rowCount(), 13);
+        const QImage stored(s.pathOf(id));
+        QCOMPARE(stored.size(), QSize(256, 170));
+        QVERIFY(stored.hasAlphaChannel());
+        // Kept under the id it came with.
+        QCOMPARE(s.add(path, QStringLiteral("u-feedfacecafe0001")), QStringLiteral("u-feedfacecafe0001"));
+        QVERIFY(s.add(dir.path() + "/missing.png").isEmpty());
+
+        s.setCachedLink(id, QStringLiteral("https://litter.catbox.moe/x.png"), 72);
+        QCOMPARE(s.cachedLink(id), QStringLiteral("https://litter.catbox.moe/x.png"));
+        s.setCachedLink(QStringLiteral("hello"), QStringLiteral("https://litter.catbox.moe/y.png"), 1);
+        QVERIFY(s.cachedLink(QStringLiteral("hello")).isEmpty()); // expires too soon to send
+
+        StickerStore again;
+        again.open(assets(QStringLiteral("stickers")), dir.path() + "/mine");
+        QCOMPARE(again.rowCount(), 14);
+        QCOMPARE(again.cachedLink(id), QStringLiteral("https://litter.catbox.moe/x.png"));
+        QVERIFY(again.remove(id));
+        QCOMPARE(again.rowCount(), 13);
+        QVERIFY(!QFile::exists(s.pathOf(id)));
     }
 
     void wrongPasswordStopsWithoutRetrying()
@@ -156,6 +284,7 @@ private slots:
     void offlineMessage();
     void profilePicture();
     void profileDetails();
+    void media();
     void phase2SignOut();
 
     void historySurvivesRestart()
@@ -239,7 +368,9 @@ void TestCore::authorization()
 
     QSignalSpy requested(&b, &AccountManager::authorizationRequested);
     QSignalSpy answered(&a, &AccountManager::authorizationAnswered);
-    QVERIFY(a.addContact(QStringLiteral("100002"), QString(), QStringLiteral("It is me, from the test")));
+    QSignalSpy refused(&a, &AccountManager::contactEditFailed);
+    QVERIFY2(a.addContact(QStringLiteral("100002"), QString(), QStringLiteral("It is me, from the test")),
+             refused.isEmpty() ? "?" : qPrintable(refused.last().at(1).toString()));
     QVERIFY(waitFor([&] { return a.isContact(QStringLiteral("100002")); }, 10000));
     QVERIFY(waitFor([&] { return requested.count() >= 1; }, 10000));
     QCOMPARE(requested.first().at(0).toString(), QStringLiteral("100001"));
@@ -478,6 +609,114 @@ void TestCore::profileDetails()
     QCOMPARE(got.value(QStringLiteral("firstName")).toString(), QStringLiteral("Alice"));
     QCOMPARE(got.value(QStringLiteral("city")).toString(), QStringLiteral("Gibraltar"));
     QCOMPARE(got.value(QStringLiteral("gender")).toInt(), 1);
+}
+
+void TestCore::media()
+{
+    if (qgetenv("ICQNINA_TEST_DOWNLOAD_BASE").isEmpty())
+        QSKIP("ICQNINA_TEST_DOWNLOAD_BASE not set");
+    AccountManager &a = *m_a;
+    AccountManager &b = *m_b;
+    a.setStickerPack(assets(QStringLiteral("stickers")));
+    b.setStickerPack(assets(QStringLiteral("stickers")));
+    // B loads media automatically only from people on B's list.
+    if (!b.isContact(QStringLiteral("100001"))) {
+        b.addContact(QStringLiteral("100001"), QStringLiteral("Buddies"));
+        QVERIFY(waitFor([&] { return b.isContact(QStringLiteral("100001")); }, 10000));
+    }
+    ChatModel *aChat = a.chat(QStringLiteral("100002"));
+    ChatModel *bChat = b.chat(QStringLiteral("100001"));
+    QSignalSpy received(&b, &AccountManager::messageReceived);
+
+    // A photo: made smaller, sent as a link, loaded by B.
+    QImage photo(3200, 2400, QImage::Format_ARGB32);
+    photo.fill(QColor(200, 120, 40, 200));
+    const QString photoPath = m_files.path() + "/holiday.png";
+    QVERIFY(photo.save(photoPath));
+    QVERIFY2(a.media()->sendPhoto(QStringLiteral("100002"), QUrl::fromLocalFile(photoPath).toString()),
+             qPrintable(a.media()->lastError()));
+    QCOMPARE(lastRow(aChat, ChatModel::KindRole).toInt(), int(StoredMessage::Media));
+    QCOMPARE(lastRow(aChat, ChatModel::MediaTypeRole).toInt(), int(MediaLink::Photo));
+    QCOMPARE(lastRow(aChat, ChatModel::MediaInfoRole).toString(), QStringLiteral("1600x1200"));
+    QVERIFY2(waitFor([&] { return lastRow(aChat, ChatModel::FileStateRole).toInt() == TransferManager::Done; }, 20000),
+             qPrintable(a.media()->lastError()));
+    QVERIFY(lastRow(aChat, ChatModel::FileUrlRole).toString().endsWith(QStringLiteral(".jpg#icqnina-photo=1600x1200")));
+    QVERIFY(waitFor([&] { return lastRow(aChat, ChatModel::DeliveredRole).toBool(); }, 5000));
+    const QString sentPhoto = lastRow(aChat, ChatModel::FilePathRole).toString();
+    QCOMPARE(QImage(sentPhoto).size(), QSize(1600, 1200));
+
+    QVERIFY(waitFor([&] { return received.count() >= 1; }, 10000));
+    QCOMPARE(received.last().at(2).toString(), QStringLiteral("Photo"));
+    QCOMPARE(lastRow(bChat, ChatModel::MediaTypeRole).toInt(), int(MediaLink::Photo));
+    QVERIFY2(waitFor([&] { return lastRow(bChat, ChatModel::FileStateRole).toInt() == TransferManager::Done; }, 15000),
+             qPrintable(b.media()->lastError()));
+    const QString gotPhoto = lastRow(bChat, ChatModel::FilePathRole).toString();
+    QVERIFY(gotPhoto.startsWith(b.media()->mediaDir()));
+    QCOMPARE(contents(gotPhoto), contents(sentPhoto));
+    QString preview;
+    for (int i = 0; i < b.contacts()->rowCount(); ++i)
+        if (b.contacts()->data(b.contacts()->index(i), ContactModel::UinRole).toString() == QLatin1String("100001"))
+            preview = b.contacts()->data(b.contacts()->index(i), ContactModel::LastMessageRole).toString();
+    QCOMPARE(preview, QStringLiteral("Photo"));
+
+    // A voice message.
+    const QString wav = makeWav(QStringLiteral("rec.wav"), 1300);
+    QVERIFY2(a.media()->sendVoice(QStringLiteral("100002"), wav, 1300), qPrintable(a.media()->lastError()));
+    QVERIFY(waitFor([&] { return received.count() >= 2; }, 20000));
+    QCOMPARE(received.last().at(2).toString(), QStringLiteral("Voice message (0:01)"));
+    QCOMPARE(lastRow(bChat, ChatModel::MediaInfoRole).toString(), QStringLiteral("1300"));
+    QVERIFY(waitFor([&] { return lastRow(bChat, ChatModel::FileStateRole).toInt() == TransferManager::Done; }, 15000));
+    QCOMPARE(contents(lastRow(bChat, ChatModel::FilePathRole).toString()), contents(wav));
+
+    // One of the app's stickers: B has it, so nothing is downloaded.
+    QVERIFY(a.media()->sendSticker(QStringLiteral("100002"), QStringLiteral("hello")));
+    QVERIFY(waitFor([&] { return received.count() >= 3; }, 20000));
+    QCOMPARE(lastRow(bChat, ChatModel::MediaTypeRole).toInt(), int(MediaLink::Sticker));
+    QCOMPARE(lastRow(bChat, ChatModel::FileStateRole).toInt(), int(TransferManager::Done));
+    QCOMPARE(lastRow(bChat, ChatModel::FilePathRole).toString(), b.media()->stickers()->pathOf(QStringLiteral("hello")));
+    // Sent again: the link is reused, so it goes at once.
+    QVERIFY(a.media()->sendSticker(QStringLiteral("100002"), QStringLiteral("hello")));
+    QCOMPARE(lastRow(aChat, ChatModel::FileStateRole).toInt(), int(TransferManager::Done));
+    QVERIFY(waitFor([&] { return received.count() >= 4; }, 10000));
+
+    // A sticker of A's own: B downloads it and can keep it under its id.
+    QImage art(300, 300, QImage::Format_ARGB32);
+    art.fill(Qt::transparent);
+    QPainter p(&art);
+    p.setBrush(Qt::blue);
+    p.drawEllipse(20, 20, 260, 260);
+    p.end();
+    QVERIFY(art.save(m_files.path() + "/art.png"));
+    const QString mine = a.media()->stickers()->add(m_files.path() + "/art.png");
+    QVERIFY(mine.startsWith(QStringLiteral("u-")));
+    QVERIFY(a.media()->sendSticker(QStringLiteral("100002"), mine));
+    QVERIFY(waitFor([&] { return received.count() >= 5; }, 20000));
+    QCOMPARE(lastRow(bChat, ChatModel::MediaInfoRole).toString(), mine);
+    QVERIFY(waitFor([&] { return lastRow(bChat, ChatModel::FileStateRole).toInt() == TransferManager::Done; }, 15000));
+    QCOMPARE(b.media()->stickers()->add(lastRow(bChat, ChatModel::FilePathRole).toString(), mine), mine);
+    QVERIFY(b.media()->stickers()->contains(mine));
+
+    // Not loaded automatically when that is switched off; loaded on request.
+    b.setAutoLoadMedia(false);
+    QVERIFY(a.media()->sendPhoto(QStringLiteral("100002"), photoPath));
+    QVERIFY(waitFor([&] { return received.count() >= 6; }, 20000));
+    QTest::qWait(1000);
+    QCOMPARE(lastRow(bChat, ChatModel::FileStateRole).toInt(), int(TransferManager::Offered));
+    b.media()->load(QStringLiteral("100001"), lastRow(bChat, ChatModel::IdRole).toLongLong());
+    QVERIFY(waitFor([&] { return lastRow(bChat, ChatModel::FileStateRole).toInt() == TransferManager::Done; }, 15000));
+    b.setAutoLoadMedia(true);
+
+    // An expired link.
+    QSignalSpy failed(b.media(), &MediaManager::failed);
+    QVERIFY(a.sendMessage(QStringLiteral("100002"), QStringLiteral("Photo: https://files.test/gone.jpg#icqnina-photo")));
+    QVERIFY(waitFor([&] { return received.count() >= 7; }, 10000));
+    QVERIFY(waitFor([&] { return lastRow(bChat, ChatModel::FileStateRole).toInt() == TransferManager::Failed; }, 15000));
+    QCOMPARE(failed.last().at(1).toString(), QStringLiteral("The link has expired."));
+
+    // History keeps it all.
+    StoredMessage m = b.storedMessage(lastRow(bChat, ChatModel::IdRole).toLongLong());
+    QCOMPARE(m.kind, int(StoredMessage::Media));
+    QCOMPARE(m.fileState, int(TransferManager::Failed));
 }
 
 void TestCore::phase2SignOut()

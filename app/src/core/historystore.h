@@ -6,11 +6,12 @@
 #include <QDateTime>
 #include <QSqlDatabase>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 struct StoredMessage
 {
-    enum Kind { Text = 0, File = 1 };
+    enum Kind { Text = 0, File = 1, Media = 2 };
 
     qint64 id = 0;
     QString contact;
@@ -28,6 +29,13 @@ struct StoredMessage
     QString fileUrl;       // download link when sent as a link
     int fileState = 0;     // TransferModel::State
     QString transferId;
+
+    // Photos, voice messages and stickers (kind == Media) are sent as a link
+    // (see MediaLink); filePath is the local copy, fileUrl the link with its
+    // fragment, fileState: 0 not loaded, 1 loading, 3 here, 4 failed,
+    // 7 uploading.
+    int mediaType = 0;     // MediaLink::Type
+    QString mediaInfo;     // photo "WxH", voice duration in ms, sticker id
 };
 
 struct StoredContact
@@ -47,7 +55,11 @@ public:
 
     qint64 addMessage(const StoredMessage &m);
     void setDelivered(qint64 id);
-    void updateFile(qint64 id, int state, const QString &path, const QString &url);
+    // size < 0: unchanged.
+    void updateFile(qint64 id, int state, const QString &path, const QString &url, qint64 size = -1);
+    StoredMessage message(qint64 id) const;
+    // Local copies of the photos, voice messages and stickers in a conversation.
+    QStringList mediaFiles(const QString &contact) const;
     // Whether an incoming message with this text from this contact was
     // stored within toleranceSecs of when (offline messages can arrive twice).
     bool hasIncoming(const QString &contact, const QString &text, const QDateTime &when, int toleranceSecs) const;

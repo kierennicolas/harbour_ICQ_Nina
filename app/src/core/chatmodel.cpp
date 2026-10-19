@@ -40,6 +40,8 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
     case FileStateRole: return m.fileState;
     case FileDoneRole: return m_fileDone.value(m.id, m.fileState == 3 ? m.fileSize : 0);
     case TransferIdRole: return m.transferId;
+    case MediaTypeRole: return m.mediaType;
+    case MediaInfoRole: return m.mediaInfo;
     }
     return QVariant();
 }
@@ -61,6 +63,8 @@ QHash<int, QByteArray> ChatModel::roleNames() const
         { FileStateRole, "fileState" },
         { FileDoneRole, "fileDone" },
         { TransferIdRole, "transferId" },
+        { MediaTypeRole, "mediaType" },
+        { MediaInfoRole, "mediaInfo" },
     };
 }
 
@@ -92,7 +96,7 @@ int ChatModel::rowOf(qint64 id) const
     return -1;
 }
 
-void ChatModel::updateFile(qint64 id, int state, const QString &path, const QString &url)
+void ChatModel::updateFile(qint64 id, int state, const QString &path, const QString &url, qint64 size)
 {
     const int row = rowOf(id);
     if (row < 0)
@@ -101,8 +105,10 @@ void ChatModel::updateFile(qint64 id, int state, const QString &path, const QStr
     m.fileState = state;
     m.filePath = path;
     m.fileUrl = url;
+    if (size >= 0)
+        m.fileSize = size;
     const QModelIndex idx = index(row);
-    emit dataChanged(idx, idx, { FileStateRole, FilePathRole, FileUrlRole, FileDoneRole });
+    emit dataChanged(idx, idx, { FileStateRole, FilePathRole, FileUrlRole, FileDoneRole, FileSizeRole });
 }
 
 void ChatModel::setFileDone(qint64 id, qint64 bytes)

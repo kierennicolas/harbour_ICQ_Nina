@@ -10,7 +10,7 @@ for f in "$ROOT"/app/src/*.cpp "$ROOT"/tests/qmlcheck/main.cpp; do
   g++ -std=c++11 -fPIC -Wall -c "$f" -o /dev/null -DAPP_VERSION='"ci"' \
       -I"$ROOT/tests/stubs" -I"$ROOT/app/src" -I"$ROOT/app/src/core" \
       -I"$ROOT/liboscar" -I"$ROOT/liboscar/tasks" -I"$ROOT/liboscar/utils" -I"$ROOT/liboscar/compat" \
-      -I"$Q" -I"$Q/QtCore" -I"$Q/QtGui" -I"$Q/QtQml" -I"$Q/QtQuick" -I"$Q/QtDBus" -I"$Q/QtNetwork" -I"$Q/QtSql" \
+      -I"$Q" -I"$Q/QtCore" -I"$Q/QtGui" -I"$Q/QtQml" -I"$Q/QtQuick" -I"$Q/QtDBus" -I"$Q/QtNetwork" -I"$Q/QtSql" -I"$Q/QtMultimedia" \
       || rc=1
 done
 exit $rc

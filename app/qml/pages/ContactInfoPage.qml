@@ -20,6 +20,7 @@ Page {
     property bool awaitingAuth: false
     property string name: uin
     property string group
+    property string picture
 
     function refresh() {
         isContact = account.isContact(uin)
@@ -30,6 +31,7 @@ Page {
         name = account.displayName(uin)
         group = account.groupOf(uin)
         awaitingAuth = account.contacts.isAwaitingAuth(uin)
+        picture = account.pictureOf(uin)
     }
 
     function value(key) {
@@ -80,6 +82,7 @@ Page {
         }
         onPrivacyChanged: page.refresh()
         onGroupsChanged: page.refresh()
+        onPictureChanged: page.refresh()
     }
     Connections {
         target: account.contacts
@@ -135,6 +138,26 @@ Page {
             PageHeader {
                 title: page.name
                 description: page.name !== page.uin ? page.uin : ""
+            }
+
+            // Their profile picture; tap to see it big.
+            Item {
+                width: parent.width
+                height: Theme.itemSizeHuge * 1.4 + Theme.paddingLarge
+                Avatar {
+                    id: bigAvatar
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    size: Theme.itemSizeHuge * 1.4
+                    source: page.picture
+                    name: page.name
+                    uin: page.uin
+                }
+                MouseArea {
+                    anchors.fill: bigAvatar
+                    enabled: page.picture.length > 0
+                    onClicked: pageStack.push(Qt.resolvedUrl("ImageViewerPage.qml"),
+                                              { source: account.largePictureOf(page.uin), profilePicture: true })
+                }
             }
 
             Row {

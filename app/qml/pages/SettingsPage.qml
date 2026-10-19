@@ -1,6 +1,7 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
 import Sailfish.Pickers 1.0
+import "../components"
 
 Page {
     allowedOrientations: Orientation.All
@@ -67,6 +68,44 @@ Page {
                     visible: account.hasAccount
                     text: qsTr("Forget account")
                     onClicked: remorse.execute(qsTr("Forgetting account"), function () { account.forgetAccount() })
+                }
+            }
+
+            BackgroundItem {
+                visible: account.hasAccount
+                width: parent.width
+                height: Theme.itemSizeMedium
+                onClicked: pageStack.push(Qt.resolvedUrl("ProfilePage.qml"))
+                Avatar {
+                    id: ownAvatar
+                    x: Theme.horizontalPageMargin
+                    anchors.verticalCenter: parent.verticalCenter
+                    size: Theme.iconSizeMedium
+                    source: account.ownPicture
+                    name: account.nickname.length > 0 ? account.nickname : account.uin
+                    uin: account.uin
+                }
+                Column {
+                    anchors {
+                        left: ownAvatar.right
+                        leftMargin: Theme.paddingMedium
+                        right: parent.right
+                        rightMargin: Theme.horizontalPageMargin
+                        verticalCenter: parent.verticalCenter
+                    }
+                    Label {
+                        width: parent.width
+                        truncationMode: TruncationMode.Fade
+                        color: parent.parent.highlighted ? Theme.highlightColor : Theme.primaryColor
+                        text: qsTr("My profile")
+                    }
+                    Label {
+                        width: parent.width
+                        truncationMode: TruncationMode.Fade
+                        font.pixelSize: Theme.fontSizeExtraSmall
+                        color: parent.parent.highlighted ? Theme.secondaryHighlightColor : Theme.secondaryColor
+                        text: qsTr("Picture, nickname and details")
+                    }
                 }
             }
 
@@ -153,6 +192,16 @@ Page {
                     text: qsTr("Choose a sound file")
                     onClicked: pageStack.push(soundPicker)
                 }
+            }
+
+            SectionHeader { text: qsTr("Photos and voice messages") }
+
+            TextSwitch {
+                checked: account.autoLoadMedia
+                automaticCheck: false
+                onClicked: account.autoLoadMedia = !account.autoLoadMedia
+                text: qsTr("Load automatically from contacts")
+                description: qsTr("Photos, voice messages and stickers from people in your contact list are loaded as they arrive (from the file host they were sent through). From anyone else, and with this off, tap them to load.")
             }
 
             SectionHeader { text: qsTr("Files") }

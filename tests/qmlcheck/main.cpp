@@ -28,8 +28,12 @@
 #include "chatmodel.h"
 #include "contactmodel.h"
 #include "dbusservice.h"
+#include "emoji.h"
+#include "mediamanager.h"
 #include "searchmodel.h"
+#include "stickerstore.h"
 #include "transfermanager.h"
+#include "voicerecorder.h"
 
 static QString g_appUrl;
 static QString g_appPath;
@@ -82,15 +86,32 @@ int main(int argc, char **argv)
     qmlRegisterUncreatableType<ChatModel>("harbour.icqnina", 1, 0, "ChatModel", QStringLiteral("no"));
     qmlRegisterUncreatableType<SearchModel>("harbour.icqnina", 1, 0, "SearchModel", QStringLiteral("no"));
     qmlRegisterUncreatableType<TransferManager>("harbour.icqnina", 1, 0, "Transfers", QStringLiteral("no"));
+    qmlRegisterUncreatableType<MediaManager>("harbour.icqnina", 1, 0, "Media", QStringLiteral("no"));
+    qmlRegisterUncreatableType<StickerStore>("harbour.icqnina", 1, 0, "Stickers", QStringLiteral("no"));
+    qmlRegisterType<VoiceRecorder>("harbour.icqnina", 1, 0, "VoiceRecorder");
 
     QTemporaryDir tmp;
     AccountManager account(tmp.path() + QStringLiteral("/config"), tmp.path() + QStringLiteral("/data"));
+    // The installed sticker pack and emoji (next to the qml folder).
+    account.setStickerPack(root.absoluteFilePath(QStringLiteral("../stickers")));
+    Emoji emoji;
+    if (!emoji.load(root.absoluteFilePath(QStringLiteral("../emoji")))) {
+        fprintf(stderr, "[APP-QML] emoji not installed next to %s\n", qPrintable(g_appPath));
+        ++g_problems;
+    }
+    fprintf(stderr, "ASSETS    %d stickers, %d emoji categories\n", account.media()->stickers()->rowCount(),
+            emoji.categories().size());
+    if (account.media()->stickers()->rowCount() < 12) {
+        fprintf(stderr, "[APP-QML] sticker pack not installed\n");
+        ++g_problems;
+    }
     DBusService dbus;
 
     QQuickView view;
     QQmlContext *ctx = view.rootContext();
     ctx->setContextProperty(QStringLiteral("account"), &account);
     ctx->setContextProperty(QStringLiteral("dbus"), &dbus);
+    ctx->setContextProperty(QStringLiteral("emoji"), &emoji);
     ctx->setContextProperty(QStringLiteral("appVersion"), QStringLiteral("qmlcheck"));
 
     int files = 0;
@@ -153,6 +174,35 @@ int main(int argc, char **argv)
                  { QStringLiteral("timestamp"), QDateTime::currentDateTime() },
                  { QStringLiteral("contact"), uin }, { QStringLiteral("contactName"), QStringLiteral("Test") } });
     }
+
+    // 0.3: pictures, profile, photos, voice messages, stickers, emoji.
+    create(view.engine(), ctx, root, "pages/ProfilePage.qml");
+    create(view.engine(), ctx, root, "pages/ImageViewerPage.qml",
+           { { QStringLiteral("source"), QStringLiteral("file:///usr/share/harbour-icqnina/stickers/hello.png") },
+             { QStringLiteral("filePath"), QStringLiteral("/usr/share/harbour-icqnina/stickers/hello.png") },
+             { QStringLiteral("link"), QStringLiteral("https://litter.catbox.moe/x.png#icqnina-photo") } });
+    create(view.engine(), ctx, root, "pages/PhotoSendDialog.qml",
+           { { QStringLiteral("filePath"), QStringLiteral("/usr/share/harbour-icqnina/stickers/wow.png") },
+             { QStringLiteral("name"), QStringLiteral("Test") } });
+    create(view.engine(), ctx, root, "components/Avatar.qml",
+           { { QStringLiteral("name"), QStringLiteral("Test") }, { QStringLiteral("uin"), uin }, { QStringLiteral("presence"), 0 } });
+    if (QObject *panel = create(view.engine(), ctx, root, "components/EmojiPanel.qml"))
+        panel->setProperty("stickers", true);
+    for (int type = 1; type <= 3; ++type) {
+        for (int state : { 0, 2, 3, 4, 7 }) {
+            const bool out = state == 7 || (state == 3 && type != 1);
+            create(view.engine(), ctx, root, "components/MediaBubble.qml",
+                   { { QStringLiteral("outgoing"), out }, { QStringLiteral("mediaType"), type },
+                     { QStringLiteral("mediaInfo"), type == 1 ? QStringLiteral("1600x1200") : type == 2 ? QStringLiteral("12300") : QStringLiteral("hello") },
+                     { QStringLiteral("fileState"), state }, { QStringLiteral("fileDone"), 1000 }, { QStringLiteral("fileSize"), 4000 },
+                     { QStringLiteral("filePath"), state == 3 || out ? QStringLiteral("/usr/share/harbour-icqnina/stickers/hello.png") : QString() },
+                     { QStringLiteral("fileUrl"), QStringLiteral("https://litter.catbox.moe/x.png#icqnina-sticker=hello") },
+                     { QStringLiteral("messageId"), 1 }, { QStringLiteral("timestamp"), QDateTime::currentDateTime() },
+                     { QStringLiteral("contact"), uin }, { QStringLiteral("maxWidth"), 400 } });
+        }
+    }
+    // Message text with emoji and a link, as the conversation shows it.
+    fprintf(stderr, "EMOJI     %s\n", qPrintable(emoji.richText(QString::fromUtf8("Hi \xF0\x9F\x98\x80 https://nina.chat"), 32)));
 
     // Deferred actions must still work after the menu that started them is
     // gone: run the contact list's remove action through its undo countdown.

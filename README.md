@@ -54,8 +54,26 @@ authorization, blocking, directory, offline messages, direct and proxied file
 transfers, links via a stand-in upload server) and against NINA (directory
 search and info, ICQ offline retrieval, the rendezvous proxy handshake).
 
-Next (Phase 3): AIM extras, multiple accounts, buddy icons, chat rooms,
-share-to-app.
+**0.3 – pictures, photos, voice and stickers.**
+
+- profile pictures (OSCAR buddy icons) in the contact list, the
+  conversation header and contact details (tap for full size); set, take or
+  remove your own
+- edit your own profile: nickname, name, email, city, region, home page,
+  gender, birthday, about
+- photos from the gallery or the camera, voice messages (record, send,
+  play in the conversation), stickers (the app's own "Pip" pack, add your own
+  from pictures or from stickers people send) and emoji (picker, and emoji
+  shown as pictures in messages and the contact list)
+- photos, voice messages and stickers travel as a link with a small marker
+  (`https://litter.catbox.moe/…#icqnina-photo=1600x1200`), so every ICQ/AIM
+  client can open them; ICQ Nina shows them in the conversation and keeps a
+  copy (loaded automatically from contacts). Photos are sent at most
+  1600 px, without their location data
+- the number search only accepts real ICQ numbers (up to 4294967295) and
+  shows exact matches
+
+Next (Phase 4): AIM extras, multiple accounts, chat rooms, share-to-app.
 
 | Piece | What it is |
 | --- | --- |
@@ -106,6 +124,9 @@ protocol trace.
 
 ## Licence
 
-The app and tools are GPL-3.0-or-later (`LICENSE`). `liboscar/` keeps
+The app and tools are GPL-3.0-or-later (`LICENSE`), the "Pip" stickers
+included. The emoji pictures in `app/emoji` are from
+[Twemoji](https://github.com/jdecked/twemoji), CC-BY 4.0
+(`app/emoji/LICENSE-GRAPHICS`). `liboscar/` keeps
 Kopete's per-file licences (mixed LGPL-2+/GPL-2+, so GPL-2.0-or-later as a
 whole); see [`liboscar/README.md`](liboscar/README.md).

@@ -1,6 +1,6 @@
 Name:       harbour-icqnina
 Summary:    ICQ and AIM messaging on the NINA service
-Version:    0.2.4
+Version:    0.3.0
 Release:    1
 Group:      Qt/Qt
 License:    GPLv3+ and GPLv2+
@@ -23,6 +23,7 @@ BuildRequires:  pkgconfig(Qt5Quick)
 BuildRequires:  pkgconfig(Qt5Sql)
 BuildRequires:  pkgconfig(Qt5Xml)
 BuildRequires:  pkgconfig(Qt5DBus)
+BuildRequires:  pkgconfig(Qt5Multimedia)
 BuildRequires:  desktop-file-utils
 
 %description
@@ -32,7 +33,8 @@ with an ICQ number (or AIM screen name), see your server-side contact list
 and presence, and chat with notifications and history. Add and remove
 contacts, ask for and give authorization, look up ICQ numbers, block
 people, and send and receive files (directly, through NINA's relay, or as a
-download link).
+download link). Profile pictures, your own profile, photos (from the
+gallery or the camera), voice messages, stickers (add your own) and emoji.
 Unofficial; not affiliated with NINA, ICQ or AOL.
 
 %prep

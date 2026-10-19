@@ -170,14 +170,18 @@ Page {
                 }
             }
 
-            PresenceDot {
+            Avatar {
                 id: dot
-                presence: model.presence
                 anchors {
                     left: parent.left
                     leftMargin: Theme.horizontalPageMargin
                     verticalCenter: parent.verticalCenter
                 }
+                size: Theme.iconSizeMedium
+                source: model.icon || ""
+                name: model.name
+                uin: model.uin
+                presence: model.presence
             }
 
             Column {
@@ -198,13 +202,18 @@ Page {
                 Label {
                     width: parent.width
                     truncationMode: TruncationMode.Fade
+                    maximumLineCount: 1
+                    wrapMode: Text.NoWrap
                     font.pixelSize: Theme.fontSizeExtraSmall
                     color: model.typing ? Theme.highlightColor
                          : (item.highlighted ? Theme.secondaryHighlightColor : Theme.secondaryColor)
+                    textFormat: Text.StyledText
+                    linkColor: color
+                    // One line: newlines become spaces, emoji pictures.
                     text: model.typing ? qsTr("typing…")
                         : model.awaitingAuth ? qsTr("Waiting for authorization")
-                        : model.lastMessage.length > 0 ? model.lastMessage
-                        : model.statusMessage.length > 0 ? model.statusMessage
+                        : model.lastMessage.length > 0 ? emoji.richText(model.lastMessage.replace(/\s+/g, " "), Math.round(font.pixelSize * 1.1))
+                        : model.statusMessage.length > 0 ? emoji.richText(model.statusMessage, Math.round(font.pixelSize * 1.1))
                         : Presence.name(model.presence)
                 }
             }

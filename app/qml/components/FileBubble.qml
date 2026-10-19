@@ -101,6 +101,27 @@ Rectangle {
             }
         }
 
+        // A picture that is here: show it.
+        Image {
+            id: preview
+            readonly property bool isImage: /\.(jpe?g|png|gif|webp|bmp)$/i.test(bubble.fileName)
+            visible: isImage && bubble.filePath.length > 0 && status === Image.Ready
+                     && (bubble.outgoing || bubble.fileState === bubble.stDone)
+            width: parent.width
+            height: visible ? Math.min(width, implicitHeight * width / Math.max(1, implicitWidth)) : 0
+            source: isImage && bubble.filePath.length > 0 && (bubble.outgoing || bubble.fileState === bubble.stDone)
+                    ? "file://" + bubble.filePath.split("/").map(encodeURIComponent).join("/") : ""
+            sourceSize.width: Math.ceil(width)
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            clip: true
+            MouseArea {
+                anchors.fill: parent
+                onClicked: pageStack.push(Qt.resolvedUrl("../pages/ImageViewerPage.qml"),
+                                          { source: preview.source, filePath: bubble.filePath, link: bubble.fileUrl })
+            }
+        }
+
         // Progress
         Rectangle {
             visible: bubble.fileState === bubble.stTransferring || bubble.fileState === bubble.stUploading

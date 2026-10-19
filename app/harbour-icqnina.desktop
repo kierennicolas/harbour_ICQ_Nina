@@ -10,4 +10,4 @@ Categories=Network;InstantMessaging;
 [X-Sailjail]
 OrganizationName=io.github.kierennicolas
 ApplicationName=icqnina
-Permissions=Internet;UserDirs;RemovableMedia
+Permissions=Internet;UserDirs;RemovableMedia;Audio;Microphone;Camera

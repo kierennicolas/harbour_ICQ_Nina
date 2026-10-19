@@ -115,7 +115,8 @@ if [ -n "$CORE_TEST" ]; then
   echo "== app core (AccountManager) against the server"
   if QT_QPA_PLATFORM=minimal OSCAR_TEST_HOST=127.0.0.1 OSCAR_TEST_ARS=127.0.0.1:5191 \
      ICQNINA_TEST_UPLOAD_ENDPOINT=http://127.0.0.1:8099/api.php ICQNINA_TEST_UPLOAD_HOST=files.test \
-     timeout 420 "$CORE_TEST" 2>&1 | grep -v XDG_RUNTIME_DIR; then
+     ICQNINA_TEST_DOWNLOAD_BASE=http://127.0.0.1:8099 \
+     timeout 480 "$CORE_TEST" 2>&1 | grep -v XDG_RUNTIME_DIR; then
     pass "app core tests"; else fail "app core tests"; fi
 fi
 

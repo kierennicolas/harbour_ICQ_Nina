@@ -14,7 +14,27 @@
 #include <QUrl>
 
 namespace {
-const int kRoundSize = 128;
+// Big enough for the contact details page; lists scale it down.
+const int kRoundSize = 256;
+const char kRoundSuffix[] = "-round2";
+
+QImage makeRound(const QImage &image)
+{
+    const int side = qMin(image.width(), image.height());
+    const QImage square = image.copy((image.width() - side) / 2, (image.height() - side) / 2, side, side)
+                               .scaled(kRoundSize, kRoundSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    QImage round(kRoundSize, kRoundSize, QImage::Format_ARGB32_Premultiplied);
+    round.fill(Qt::transparent);
+    QPainter p(&round);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+    QPainterPath circle;
+    circle.addEllipse(0, 0, kRoundSize, kRoundSize);
+    p.setClipPath(circle);
+    p.drawImage(0, 0, square);
+    p.end();
+    return round;
+}
 }
 
 bool Avatars::isClearHash(const QByteArray &hash)
@@ -67,8 +87,14 @@ QString Avatars::roundUrl(const QByteArray &hash) const
 {
     if (isClearHash(hash) || m_dir.isEmpty())
         return QString();
-    const QString p = pathFor(hash, "-round");
-    return QFileInfo::exists(p) ? QUrl::fromLocalFile(p).toString() : QString();
+    const QString p = pathFor(hash, kRoundSuffix);
+    if (!QFileInfo::exists(p)) {
+        // Made from the square picture (also upgrades older, smaller ones).
+        const QImage square(pathFor(hash, ""));
+        if (square.isNull() || !makeRound(square).save(p, "PNG"))
+            return QString();
+    }
+    return QUrl::fromLocalFile(p).toString();
 }
 
 QString Avatars::squareUrl(const QByteArray &hash) const
@@ -85,22 +111,8 @@ QString Avatars::store(const QByteArray &hash, const QByteArray &data)
     if (m_dir.isEmpty() || isClearHash(hash) || !image.loadFromData(data) || image.isNull())
         return QString();
     image.save(pathFor(hash, ""), "PNG");
-
-    // Round version: centre square, scaled, clipped to a circle.
-    const int side = qMin(image.width(), image.height());
-    const QImage square = image.copy((image.width() - side) / 2, (image.height() - side) / 2, side, side)
-                               .scaled(kRoundSize, kRoundSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-    QImage round(kRoundSize, kRoundSize, QImage::Format_ARGB32_Premultiplied);
-    round.fill(Qt::transparent);
-    QPainter p(&round);
-    p.setRenderHint(QPainter::Antialiasing);
-    p.setRenderHint(QPainter::SmoothPixmapTransform);
-    QPainterPath circle;
-    circle.addEllipse(0, 0, kRoundSize, kRoundSize);
-    p.setClipPath(circle);
-    p.drawImage(0, 0, square);
-    p.end();
-    round.save(pathFor(hash, "-round"), "PNG");
+    QFile::remove(pathFor(hash, "-round"));   // made by 0.2.x
+    makeRound(image).save(pathFor(hash, kRoundSuffix), "PNG");
     return roundUrl(hash);
 }
 

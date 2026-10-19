@@ -17,6 +17,7 @@
 #include "avatars.h"
 #include "contactmodel.h"
 #include "historystore.h"
+#include "mediamanager.h"
 #include "searchmodel.h"
 #include "transfermanager.h"
 
@@ -78,6 +79,11 @@ class AccountManager : public QObject
     Q_PROPERTY(int messageSound READ messageSound WRITE setMessageSound NOTIFY soundChanged)
     Q_PROPERTY(QString customSoundFile READ customSoundFile NOTIFY soundChanged)
     Q_PROPERTY(QString customSoundName READ customSoundName NOTIFY soundChanged)
+    // Photos, voice messages and stickers (and the sticker collection).
+    Q_PROPERTY(MediaManager *media READ media CONSTANT)
+    // Load photos, voice messages and stickers from people in your contact
+    // list as they arrive (others: when you tap them).
+    Q_PROPERTY(bool autoLoadMedia READ autoLoadMedia WRITE setAutoLoadMedia NOTIFY autoLoadMediaChanged)
 
 public:
     enum State { Offline = 0, Connecting, Online };
@@ -155,6 +161,11 @@ public:
     // Copies a sound file into the app's own folder (the notification
     // service plays it from there) and selects it. Returns false if unreadable.
     Q_INVOKABLE bool setCustomSound(const QString &pathOrUrl);
+    MediaManager *media() const { return m_media; }
+    bool autoLoadMedia() const { return m_autoLoadMedia; }
+    void setAutoLoadMedia(bool load);
+    // The app's own sticker pack (installed with the app).
+    void setStickerPack(const QString &dir);
     bool proxyTransfers() const { return m_proxyTransfers; }
     void setProxyTransfers(bool proxy);
     QString fileProxyHost() const;
@@ -228,9 +239,14 @@ public:
 
     // For TransferManager.
     bool isOnline() const { return m_state == Online && m_client; }
-    bool sendText(const QString &uin, const QString &text, bool record);
+    // ackFor: a stored message to mark delivered when the server confirms.
+    bool sendText(const QString &uin, const QString &text, bool record, qint64 ackFor = 0);
     qint64 addFileMessage(StoredMessage m);
-    void updateFileMessage(const QString &uin, qint64 id, int state, const QString &path, const QString &url);
+    void updateFileMessage(const QString &uin, qint64 id, int state, const QString &path, const QString &url,
+                           qint64 size = -1);
+    StoredMessage storedMessage(qint64 id) const { return m_history.message(id); }
+    // The line shown for a message in the contact list and notifications.
+    static QString previewOf(const StoredMessage &m);
     void setFileMessageProgress(const QString &uin, qint64 id, qint64 bytes);
     static QString normalized(const QString &uin);
     // Tests: use this rendezvous proxy instead of the profile's.
@@ -269,6 +285,7 @@ signals:
     void savingProfileChanged();
     void profileSaved(bool ok, const QString &message);
     void soundChanged();
+    void autoLoadMediaChanged();
 
 private slots:
     void onLoggedIn();
@@ -385,6 +402,9 @@ private:
     bool m_savingProfile = false;
     QTimer m_profileTimer;
     bool m_proxyTransfers = true;
+    StickerStore *m_stickers = nullptr;
+    MediaManager *m_media = nullptr;
+    bool m_autoLoadMedia = true;
     int m_messageSound = 1;
     QString m_customSoundFile;
     QString m_customSoundName;

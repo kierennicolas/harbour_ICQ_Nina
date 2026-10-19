@@ -9,6 +9,33 @@
 #include <QVariant>
 #include <QDebug>
 
+namespace {
+const char kColumns[] = "id, contact, outgoing, text, ts, delivered, read, kind, file_name, file_size,"
+                        " file_path, file_url, file_state, transfer_id, media_type, media_info";
+
+StoredMessage fromRow(const QSqlQuery &q)
+{
+    StoredMessage m;
+    m.id = q.value(0).toLongLong();
+    m.contact = q.value(1).toString();
+    m.outgoing = q.value(2).toInt() != 0;
+    m.text = q.value(3).toString();
+    m.timestamp = QDateTime::fromMSecsSinceEpoch(q.value(4).toLongLong());
+    m.delivered = q.value(5).toInt() != 0;
+    m.read = q.value(6).toInt() != 0;
+    m.kind = q.value(7).toInt();
+    m.fileName = q.value(8).toString();
+    m.fileSize = q.value(9).toLongLong();
+    m.filePath = q.value(10).toString();
+    m.fileUrl = q.value(11).toString();
+    m.fileState = q.value(12).toInt();
+    m.transferId = q.value(13).toString();
+    m.mediaType = q.value(14).toInt();
+    m.mediaInfo = q.value(15).toString();
+    return m;
+}
+} // namespace
+
 bool HistoryStore::open(const QString &path, const QString &account)
 {
     close();
@@ -61,6 +88,9 @@ bool HistoryStore::migrate()
         { QStringLiteral("file_url"), QStringLiteral("TEXT") },
         { QStringLiteral("file_state"), QStringLiteral("INTEGER NOT NULL DEFAULT 0") },
         { QStringLiteral("transfer_id"), QStringLiteral("TEXT") },
+        // 0.3: photos, voice messages, stickers.
+        { QStringLiteral("media_type"), QStringLiteral("INTEGER NOT NULL DEFAULT 0") },
+        { QStringLiteral("media_info"), QStringLiteral("TEXT") },
     };
     for (const auto &c : wanted) {
         if (columns.contains(c.first))
@@ -73,6 +103,10 @@ bool HistoryStore::migrate()
     // Transfers cannot survive a restart: whatever was still running failed.
     // (States: 0 offered, 1 waiting, 2 transferring, 7 uploading -> 4 failed.)
     q.exec(QStringLiteral("UPDATE messages SET file_state = 4 WHERE kind = 1 AND file_state IN (0, 1, 2, 7)"));
+    // Media: an interrupted upload failed (can be retried), an interrupted
+    // download is simply not loaded yet.
+    q.exec(QStringLiteral("UPDATE messages SET file_state = 4 WHERE kind = 2 AND file_state = 7"));
+    q.exec(QStringLiteral("UPDATE messages SET file_state = 0 WHERE kind = 2 AND file_state IN (1, 2)"));
     return true;
 }
 
@@ -96,8 +130,9 @@ qint64 HistoryStore::addMessage(const StoredMessage &m)
         return 0;
     QSqlQuery q(m_db);
     q.prepare(QStringLiteral("INSERT INTO messages (account, contact, outgoing, text, ts, delivered, read,"
-                             " kind, file_name, file_size, file_path, file_url, file_state, transfer_id)"
-                             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+                             " kind, file_name, file_size, file_path, file_url, file_state, transfer_id,"
+                             " media_type, media_info)"
+                             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
     q.addBindValue(m_account);
     q.addBindValue(m.contact);
     q.addBindValue(m.outgoing ? 1 : 0);
@@ -112,6 +147,8 @@ qint64 HistoryStore::addMessage(const StoredMessage &m)
     q.addBindValue(m.fileUrl);
     q.addBindValue(m.fileState);
     q.addBindValue(m.transferId);
+    q.addBindValue(m.mediaType);
+    q.addBindValue(m.mediaInfo);
     if (!q.exec()) {
         qWarning() << "history: insert" << q.lastError().text();
         return 0;
@@ -135,15 +172,18 @@ void HistoryStore::setDelivered(qint64 id)
     q.exec();
 }
 
-void HistoryStore::updateFile(qint64 id, int state, const QString &path, const QString &url)
+void HistoryStore::updateFile(qint64 id, int state, const QString &path, const QString &url, qint64 size)
 {
     if (!isOpen() || id <= 0)
         return;
     QSqlQuery q(m_db);
-    q.prepare(QStringLiteral("UPDATE messages SET file_state = ?, file_path = ?, file_url = ? WHERE id = ?"));
+    q.prepare(QStringLiteral("UPDATE messages SET file_state = ?, file_path = ?, file_url = ?,"
+                             " file_size = CASE WHEN ? < 0 THEN file_size ELSE ? END WHERE id = ?"));
     q.addBindValue(state);
     q.addBindValue(path);
     q.addBindValue(url);
+    q.addBindValue(size);
+    q.addBindValue(size);
     q.addBindValue(id);
     q.exec();
 }
@@ -203,32 +243,42 @@ QVector<StoredMessage> HistoryStore::messages(const QString &contact, int limit)
     if (!isOpen())
         return out;
     QSqlQuery q(m_db);
-    q.prepare(QStringLiteral("SELECT id, outgoing, text, ts, delivered, read,"
-                             " kind, file_name, file_size, file_path, file_url, file_state, transfer_id FROM messages"
-                             " WHERE account = ? AND contact = ? ORDER BY ts DESC, id DESC LIMIT ?"));
+    q.prepare(QStringLiteral("SELECT %1 FROM messages"
+                             " WHERE account = ? AND contact = ? ORDER BY ts DESC, id DESC LIMIT ?").arg(QLatin1String(kColumns)));
     q.addBindValue(m_account);
     q.addBindValue(contact);
     q.addBindValue(limit);
     if (!q.exec())
         return out;
-    while (q.next()) {
-        StoredMessage m;
-        m.id = q.value(0).toLongLong();
-        m.contact = contact;
-        m.outgoing = q.value(1).toInt() != 0;
-        m.text = q.value(2).toString();
-        m.timestamp = QDateTime::fromMSecsSinceEpoch(q.value(3).toLongLong());
-        m.delivered = q.value(4).toInt() != 0;
-        m.read = q.value(5).toInt() != 0;
-        m.kind = q.value(6).toInt();
-        m.fileName = q.value(7).toString();
-        m.fileSize = q.value(8).toLongLong();
-        m.filePath = q.value(9).toString();
-        m.fileUrl = q.value(10).toString();
-        m.fileState = q.value(11).toInt();
-        m.transferId = q.value(12).toString();
-        out.prepend(m); // oldest first
-    }
+    while (q.next())
+        out.prepend(fromRow(q)); // oldest first
+    return out;
+}
+
+StoredMessage HistoryStore::message(qint64 id) const
+{
+    if (!isOpen() || id <= 0)
+        return StoredMessage();
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral("SELECT %1 FROM messages WHERE account = ? AND id = ?").arg(QLatin1String(kColumns)));
+    q.addBindValue(m_account);
+    q.addBindValue(id);
+    return q.exec() && q.next() ? fromRow(q) : StoredMessage();
+}
+
+QStringList HistoryStore::mediaFiles(const QString &contact) const
+{
+    QStringList out;
+    if (!isOpen())
+        return out;
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral("SELECT file_path FROM messages WHERE account = ? AND contact = ? AND kind = 2"
+                             " AND file_path IS NOT NULL AND file_path != ''"));
+    q.addBindValue(m_account);
+    q.addBindValue(contact);
+    if (q.exec())
+        while (q.next())
+            out << q.value(0).toString();
     return out;
 }
 
@@ -249,7 +299,7 @@ QVector<StoredMessage> HistoryStore::lastMessages() const
     if (!isOpen())
         return out;
     QSqlQuery q(m_db);
-    q.prepare(QStringLiteral("SELECT m.contact, m.outgoing, m.text, m.ts FROM messages m"
+    q.prepare(QStringLiteral("SELECT m.contact, m.outgoing, m.text, m.ts, m.kind, m.media_type, m.media_info FROM messages m"
                              " JOIN (SELECT contact, MAX(id) AS last FROM messages WHERE account = ? GROUP BY contact) l"
                              " ON m.id = l.last"
                              " LEFT JOIN hidden h ON h.account = ? AND h.contact = m.contact"
@@ -264,6 +314,9 @@ QVector<StoredMessage> HistoryStore::lastMessages() const
         m.outgoing = q.value(1).toInt() != 0;
         m.text = q.value(2).toString();
         m.timestamp = QDateTime::fromMSecsSinceEpoch(q.value(3).toLongLong());
+        m.kind = q.value(4).toInt();
+        m.mediaType = q.value(5).toInt();
+        m.mediaInfo = q.value(6).toString();
         out.append(m);
     }
     return out;

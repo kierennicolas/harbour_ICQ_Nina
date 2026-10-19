@@ -297,6 +297,16 @@ int main(int argc, char **argv)
     QObject::connect(&client, &Client::connectedElsewhere, [&]() {
         out(QStringLiteral("CONNECTED-ELSEWHERE"));
     });
+    // Our own profile picture, from the icon (BART) service.
+    auto fetchOwnIcon = [&client]() {
+        const UserDetails me = client.ourInfo();
+        if (!me.iconSpecified() || me.buddyIconHash().isEmpty()) {
+            out(QStringLiteral("ICON-OWN none"));
+            return;
+        }
+        out(QStringLiteral("ICON-OWN requesting %1").arg(QString::fromLatin1(me.buddyIconHash().toHex())));
+        client.requestBuddyIcon(client.userId(), me.buddyIconHash(), me.iconType(), me.iconCheckSumType());
+    };
     QObject::connect(&client, &Client::haveOwnInfo, [&]() {
         const UserDetails me = client.ourInfo();
         out(QStringLiteral("OWN-INFO id=%1 class=0x%2 status=0x%3 online_since=%4 icon=%5")
@@ -347,10 +357,11 @@ int main(int argc, char **argv)
             }
         }
         if (p.isSet(QStringLiteral("icon-server"))) {
-            QTimer::singleShot(1000, [&client]() {
+            QTimer::singleShot(1000, [&client, fetchOwnIcon]() {
                 // Some servers offer the icon family on the main connection.
                 if (client.hasIconConnection()) {
                     out(QStringLiteral("ICON-SERVER connected (on the main connection)"));
+                    fetchOwnIcon();
                     return;
                 }
                 out(QStringLiteral("ICON-SERVER requesting"));
@@ -492,7 +503,14 @@ int main(int argc, char **argv)
     QObject::connect(client.ssiManager(), &ContactManager::contactRemoved, [&](const QString &id) {
         out(QStringLiteral("SSI-CONTACT-REMOVED %1").arg(who(id)));
     });
-    QObject::connect(&client, &Client::iconServerConnected, [&]() { out(QStringLiteral("ICON-SERVER connected")); });
+    QObject::connect(&client, &Client::iconServerConnected, [&]() {
+        out(QStringLiteral("ICON-SERVER connected"));
+        fetchOwnIcon();
+    });
+    QObject::connect(&client, &Client::haveIconForContact, [&](const QString &id, const QByteArray &data) {
+        out(QStringLiteral("ICON-RECEIVED %1 bytes=%2 md5=%3").arg(who(id)).arg(data.size())
+            .arg(QString::fromLatin1(QCryptographicHash::hash(data, QCryptographicHash::Md5).toHex())));
+    });
     QObject::connect(&client, &Client::ownProfileSaved, [&](bool ok) {
         out(QStringLiteral("PROFILE-SAVED %1").arg(ok ? "ok" : "refused"));
     });

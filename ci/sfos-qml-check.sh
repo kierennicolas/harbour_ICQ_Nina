@@ -21,6 +21,10 @@ deps=$(rpm -qpR "${rpms[0]}" | awk '$1 !~ /^(rpmlib\(|\/|lib.*\.so)/ {print $1}'
 echo "Requires (packages): $deps"
 $SB2 -m sdk-install -R zypper --non-interactive install $deps nemo-qml-plugin-notifications-qt5 libkeepalive qt5-plugin-sqldriver-sqlite \
   || { echo "::error::Could not install the app's dependencies"; problems=$((problems + 1)); }
+# QtMultimedia (camera, voice messages): the library, its QML module, and the
+# headers for building qmlcheck. On every device; the library is a Requires.
+$SB2 -m sdk-install -R zypper --non-interactive install qt5-qtmultimedia qt5-qtdeclarative-import-multimedia qt5-qtmultimedia-devel \
+  || { echo "::error::Could not install QtMultimedia"; problems=$((problems + 1)); }
 # Sailfish.Pickers (file picker) is on every device but not a Requires.
 has_pickers() { $SB2 test -e /usr/lib/qt5/qml/Sailfish/Pickers/qmldir || $SB2 test -e /usr/lib64/qt5/qml/Sailfish/Pickers/qmldir; }
 has_pickers || $SB2 -m sdk-install -R zypper --non-interactive install sailfish-components-pickers-qt5 \
