@@ -624,6 +624,10 @@ void TestCore::profileDetails()
     f.insert(QStringLiteral("firstName"), QStringLiteral("Alice"));
     f.insert(QStringLiteral("lastName"), QStringLiteral("Tester"));
     f.insert(QStringLiteral("city"), QStringLiteral("Gibraltar"));
+    f.insert(QStringLiteral("state"), QStringLiteral("Upper Town"));
+    f.insert(QStringLiteral("email"), QStringLiteral("alice@example.org"));
+    f.insert(QStringLiteral("homepage"), QStringLiteral("https://example.org/alice"));
+    f.insert(QStringLiteral("birthday"), QDate(1990, 5, 17));
     f.insert(QStringLiteral("gender"), 1);
     f.insert(QStringLiteral("about"), QStringLiteral("Testing ICQ Nina"));
     QVERIFY(a.saveProfile(f));
@@ -639,6 +643,31 @@ void TestCore::profileDetails()
     QCOMPARE(got.value(QStringLiteral("firstName")).toString(), QStringLiteral("Alice"));
     QCOMPARE(got.value(QStringLiteral("city")).toString(), QStringLiteral("Gibraltar"));
     QCOMPARE(got.value(QStringLiteral("gender")).toInt(), 1);
+    QCOMPARE(got.value(QStringLiteral("lastName")).toString(), QStringLiteral("Tester"));
+    QCOMPARE(got.value(QStringLiteral("state")).toString(), QStringLiteral("Upper Town"));
+    QCOMPARE(got.value(QStringLiteral("email")).toString(), QStringLiteral("alice@example.org"));
+    QCOMPARE(got.value(QStringLiteral("homepage")).toString(), QStringLiteral("https://example.org/alice"));
+    QCOMPARE(got.value(QStringLiteral("birthday")).toDate(), QDate(1990, 5, 17));
+    QCOMPARE(got.value(QStringLiteral("about")).toString(), QStringLiteral("Testing ICQ Nina"));
+
+    // And A sees its own details as saved (what the profile page shows).
+    QVERIFY(waitFor([&] { return a.ownProfile().value(QStringLiteral("email")).toString() == QLatin1String("alice@example.org"); }, 10000));
+    const QVariantMap own = a.ownProfile();
+    QCOMPARE(own.value(QStringLiteral("nickname")).toString(), QString::fromUtf8("Alïce"));
+    QCOMPARE(own.value(QStringLiteral("state")).toString(), QStringLiteral("Upper Town"));
+    QCOMPARE(own.value(QStringLiteral("about")).toString(), QStringLiteral("Testing ICQ Nina"));
+
+    // A second save with other values replaces them (and an emptied field
+    // is emptied).
+    QVariantMap g = f;
+    g.insert(QStringLiteral("city"), QStringLiteral("Catalan Bay"));
+    g.insert(QStringLiteral("homepage"), QString());
+    QVERIFY(waitFor([&] { return !a.savingProfile(); }, 1000));
+    QVERIFY(a.saveProfile(g));
+    QVERIFY(waitFor([&] { return saved.count() == 2; }, 15000));
+    QVERIFY(saved.last().at(0).toBool());
+    QVERIFY(waitFor([&] { return a.ownProfile().value(QStringLiteral("city")).toString() == QLatin1String("Catalan Bay"); }, 10000));
+    QCOMPARE(a.ownProfile().value(QStringLiteral("homepage")).toString(), QString());
 }
 
 void TestCore::media()

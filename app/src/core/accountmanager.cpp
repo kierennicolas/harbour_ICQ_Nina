@@ -1621,7 +1621,10 @@ void AccountManager::onLongInfo(const QString &contact)
     info.insert(QStringLiteral("nickname"), legacyText(g.nickName.get()));
     info.insert(QStringLiteral("firstName"), legacyText(g.firstName.get()));
     info.insert(QStringLiteral("lastName"), legacyText(g.lastName.get()));
-    info.insert(QStringLiteral("email"), g.publishEmail.get() ? legacyText(g.email.get()) : QString());
+    // The server leaves out addresses people chose to hide; our own is
+    // always shown to us.
+    info.insert(QStringLiteral("email"), legacyText(g.email.get()));
+    info.insert(QStringLiteral("emailPublic"), g.publishEmail.get());
     info.insert(QStringLiteral("city"), legacyText(g.city.get()));
     info.insert(QStringLiteral("state"), legacyText(g.state.get()));
     info.insert(QStringLiteral("country"), countryName(int(g.country.get())));
@@ -2032,6 +2035,7 @@ bool AccountManager::saveProfile(const QVariantMap &f)
     g->firstName.set(text("firstName"));
     g->lastName.set(text("lastName"));
     g->email.set(text("email"));
+    g->publishEmail.set(true); // the page says it is shown to others
     g->city.set(text("city"));
     g->state.set(text("state"));
     m->homepage.set(text("homepage"));
