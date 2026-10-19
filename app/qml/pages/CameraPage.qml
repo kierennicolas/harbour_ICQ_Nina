@@ -13,6 +13,8 @@ Page {
     property string acceptText: qsTr("Send")
     property string captured
     property bool front: false
+    // Extra turn of the taken photo (degrees clockwise), chosen with "Turn".
+    property int turn: 0
     signal photoTaken(string path)
 
     readonly property bool hasFront: QtMultimedia.availableCameras.length > 1
@@ -65,6 +67,10 @@ Page {
         captureMode: Camera.CaptureStillImage
         cameraState: page.wanted ? Camera.ActiveState : Camera.UnloadedState
         flash.mode: Camera.FlashOff
+        // The page is portrait only. Sailfish counts the sensor's mounting
+        // the other way round from this, hence 360 - orientation (the photo
+        // is stored upright, or marked so).
+        metaData.orientation: (360 - camera.orientation) % 360
         imageCapture {
             onImageSaved: page.captured = path
             onCaptureFailed: page.errorText = message
@@ -82,16 +88,23 @@ Page {
         visible: page.captured.length === 0
         source: camera
         fillMode: VideoOutput.PreserveAspectFit
-        autoOrientation: true
+        // The page does not rotate, so neither does the picture. (Following
+        // the screen's orientation, as autoOrientation does, turned it
+        // sideways on Sailfish OS.)
+        orientation: 0
     }
 
     Image {
-        anchors.fill: parent
+        anchors.centerIn: parent
+        width: page.turn % 180 === 0 ? parent.width : parent.height
+        height: page.turn % 180 === 0 ? parent.height : parent.width
+        rotation: page.turn
         visible: page.captured.length > 0
         source: page.captured.length > 0 ? "file://" + page.captured : ""
         fillMode: Image.PreserveAspectFit
         autoTransform: true
         asynchronous: true
+        cache: false
         sourceSize.width: 1600
         sourceSize.height: 1600
     }
@@ -191,12 +204,26 @@ Page {
         spacing: Theme.paddingLarge
 
         Button {
+            preferredWidth: Theme.buttonWidthExtraSmall !== undefined ? Theme.buttonWidthExtraSmall : Theme.buttonWidthSmall / 1.5
             text: qsTr("Retake")
-            onClicked: page.captured = ""
+            onClicked: {
+                page.turn = 0
+                page.captured = ""
+            }
         }
         Button {
+            preferredWidth: Theme.buttonWidthExtraSmall !== undefined ? Theme.buttonWidthExtraSmall : Theme.buttonWidthSmall / 1.5
+            text: qsTr("Turn")
+            onClicked: page.turn = (page.turn + 90) % 360
+        }
+        Button {
+            preferredWidth: Theme.buttonWidthExtraSmall !== undefined ? Theme.buttonWidthExtraSmall : Theme.buttonWidthSmall / 1.5
             text: page.acceptText
             onClicked: {
+                if (page.turn !== 0 && !account.media.rotateImage(page.captured, page.turn)) {
+                    page.errorText = account.media.lastError()
+                    return
+                }
                 var path = page.captured
                 page.photoTaken(path)
                 pageStack.pop()

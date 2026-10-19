@@ -179,6 +179,9 @@ int main(int argc, char **argv)
 
     // 0.3: pictures, profile, photos, voice messages, stickers, emoji.
     create(view.engine(), ctx, root, "pages/ProfilePage.qml");
+    // Never shown here, so the camera stays closed; checks the page itself.
+    create(view.engine(), ctx, root, "pages/CameraPage.qml",
+           { { QStringLiteral("savePath"), QStringLiteral("/tmp/qmlcheck-camera.jpg") } });
     create(view.engine(), ctx, root, "pages/ImageViewerPage.qml",
            { { QStringLiteral("source"), QStringLiteral("file:///usr/share/harbour-icqnina/stickers/hello.png") },
              { QStringLiteral("filePath"), QStringLiteral("/usr/share/harbour-icqnina/stickers/hello.png") },

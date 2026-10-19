@@ -205,6 +205,26 @@ private slots:
         QVERIFY(!QFile::exists(s.pathOf(id)));
     }
 
+    void rotatePhoto()
+    {
+        QTemporaryDir dir;
+        AccountManager a(dir.path() + "/config", dir.path() + "/data");
+        const QString path = a.media()->newFilePath(QStringLiteral("camera"), QStringLiteral("jpg"));
+        QVERIFY(path.startsWith(a.media()->mediaDir()));
+        QImage wide(400, 200, QImage::Format_RGB32);
+        wide.fill(Qt::red);
+        QVERIFY(wide.save(path, "JPEG"));
+        QVERIFY2(a.media()->rotateImage(QUrl::fromLocalFile(path).toString(), 90), qPrintable(a.media()->lastError()));
+        QCOMPARE(QImage(path).size(), QSize(200, 400));
+        QVERIFY(a.media()->rotateImage(path, 180));
+        QCOMPARE(QImage(path).size(), QSize(200, 400));
+        // Only the app's own camera photos.
+        const QString outside = dir.path() + "/elsewhere.jpg";
+        QVERIFY(wide.save(outside, "JPEG"));
+        QVERIFY(!a.media()->rotateImage(outside, 90));
+        QCOMPARE(QImage(outside).size(), QSize(400, 200));
+    }
+
     void wrongPasswordStopsWithoutRetrying()
     {
         AccountManager a(m_dirC.path() + "/config", m_dirC.path() + "/data");

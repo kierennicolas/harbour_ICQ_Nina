@@ -19,6 +19,7 @@
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QTransform>
 #include <QUrl>
 
 #ifndef APP_VERSION
@@ -436,6 +437,34 @@ QString MediaManager::newFilePath(const QString &prefix, const QString &extensio
     if (!extension.isEmpty())
         name += QLatin1Char('.') + extension;
     return QDir(m_dir).filePath(name);
+}
+
+bool MediaManager::rotateImage(const QString &pathOrUrl, int degrees)
+{
+    m_lastError.clear();
+    const QString path = localPath(pathOrUrl);
+    degrees = ((degrees % 360) + 360) % 360;
+    if (!QFileInfo(path).absoluteFilePath().startsWith(QDir(m_dir).absolutePath() + QLatin1Char('/'))) {
+        m_lastError = tr("Cannot change that picture.");
+        return false;
+    }
+    if (degrees == 0)
+        return true;
+    QImageReader reader(path);
+    reader.setAutoTransform(true);
+    const QImage image = reader.read();
+    if (image.isNull()) {
+        m_lastError = tr("Cannot read that picture.");
+        return false;
+    }
+    QTransform turn;
+    turn.rotate(degrees);
+    // Saved without the original's orientation mark: the pixels are upright.
+    if (!image.transformed(turn).save(path, "JPEG", 92)) {
+        m_lastError = tr("Cannot save the picture.");
+        return false;
+    }
+    return true;
 }
 
 void MediaManager::discard(const QString &pathOrUrl)

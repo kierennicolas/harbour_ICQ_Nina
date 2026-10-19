@@ -54,6 +54,9 @@ public:
     // Deletes a file of the media folder that is no longer needed (a camera
     // photo once its smaller copy is sent).
     Q_INVOKABLE void discard(const QString &pathOrUrl);
+    // Turns a picture of the media folder (a camera photo) by degrees
+    // clockwise (90, 180, 270), keeping it upright for any viewer.
+    Q_INVOKABLE bool rotateImage(const QString &pathOrUrl, int degrees);
     Q_INVOKABLE QString lastError() const { return m_lastError; }
 
     // For AccountManager: a received message that carries a media link
