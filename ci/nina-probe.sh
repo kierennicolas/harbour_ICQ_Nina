@@ -39,7 +39,7 @@ second=$?
 #    again (nobody else is involved), recording NINA's answers.
 sleep 60
 run --host login.oscar.nina.chat --port 5190 --identity icq65 --multiconn 1 --wait 40 \
-    --add-contact "$NINA_UIN" --remove-contact "$NINA_UIN" --icon-server --icon-roundtrip --profile-classic-test
+    --add-contact "$NINA_UIN" --remove-contact "$NINA_UIN" --icon-server --icon-roundtrip --profile-dump
 
 # 4. NINA's rendezvous proxy (ARS), which file transfers from a phone rely
 #    on. NINA hands a file offer to yourself back only to the session that

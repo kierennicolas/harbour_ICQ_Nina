@@ -213,6 +213,7 @@ int main(int argc, char **argv)
         {QStringLiteral("icon-server"), QStringLiteral("Connect to the buddy icon (BART) server and fetch our own picture.")},
         {QStringLiteral("icon-roundtrip"), QStringLiteral("Upload our own picture again, unchanged (needs --icon-server).")},
         {QStringLiteral("profile-roundtrip"), QStringLiteral("Write our own 'about' text back unchanged and report the server's answer.")},
+        {QStringLiteral("profile-dump"), QStringLiteral("Show which of our own details are set (lengths only, never contents).")},
         {QStringLiteral("profile-classic-test"), QStringLiteral("Whether the server keeps email, home page, gender and birthday "
                                                                  "written the classic way (0x03EA/0x03FD); originals put back.")},
         {QStringLiteral("profile-fields-test"), QStringLiteral("Which of our own details the server keeps after a TLV write "
@@ -378,6 +379,26 @@ int main(int argc, char **argv)
                 }
                 out(QStringLiteral("ICON-SERVER requesting"));
                 client.connectToIconServer();
+            });
+        }
+        if (p.isSet(QStringLiteral("profile-dump"))) {
+            client.requestFullInfo(uin);
+            QTimer::singleShot(7000, [&client, uin]() {
+                const ICQGeneralUserInfo g = client.getGeneralInfo(uin);
+                const ICQMoreUserInfo m = client.getMoreInfo(uin);
+                const ICQNotesInfo n = client.getNotesInfo(uin);
+                auto len = [](const QByteArray &v) {
+                    return QStringLiteral("%1%2").arg(v.size()).arg(v.contains('\0') ? "+nul" : "");
+                };
+                out(QStringLiteral("PROFILE-DUMP nick=%1 first=%2 last=%3 email=%4 city=%5 state=%6 phone=%7 zip=%8 "
+                                   "country=%9").arg(len(g.nickName.get()), len(g.firstName.get()), len(g.lastName.get()),
+                                                     len(g.email.get()), len(g.city.get()), len(g.state.get()),
+                                                     len(g.phoneNumber.get()), len(g.zip.get()))
+                    .arg(g.country.get()));
+                out(QStringLiteral("PROFILE-DUMP homepage=%1 gender=%2 birthday=%3-%4-%5 about=%6 publish-email=%7 auth=%8")
+                    .arg(len(m.homepage.get())).arg(m.gender.get()).arg(m.birthdayYear.get()).arg(m.birthdayMonth.get())
+                    .arg(m.birthdayDay.get()).arg(len(n.notes.get())).arg(g.publishEmail.get() ? 1 : 0)
+                    .arg(g.needsAuth.get() ? "required" : "no"));
             });
         }
         if (p.isSet(QStringLiteral("profile-classic-test"))) {
