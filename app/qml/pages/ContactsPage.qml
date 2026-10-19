@@ -9,9 +9,35 @@ Page {
     allowedOrientations: Orientation.All
 
     property bool askedForAccount: false
-
-    RemorsePopup { id: removeRemorse }
     property int tick: 0 // re-evaluates the countdown text once a second
+
+    // The long-press menu is created when it opens and destroyed when it
+    // closes, and list updates recreate rows, so anything that runs later
+    // (after the undo countdown or a dialog) must be set up here, on the
+    // page, not in the menu or the row.
+    RemorsePopup { id: removeRemorse }
+
+    function removeEntry(uin, name, listed) {
+        removeRemorse.execute(listed ? qsTr("Removing %1").arg(name) : qsTr("Deleting conversation with %1").arg(name),
+                              function() {
+                                  if (listed)
+                                      account.removeContact(uin)
+                                  else
+                                      account.deleteConversation(uin)
+                              })
+    }
+
+    function renameEntry(uin) {
+        var d = pageStack.push(Qt.resolvedUrl("TextInputDialog.qml"), {
+            title: qsTr("Rename"), label: qsTr("Name in your list"),
+            value: account.aliasOf(uin), placeholder: uin, allowEmpty: true })
+        d.accepted.connect(function() { account.renameContact(uin, d.value) })
+    }
+
+    function moveEntry(uin) {
+        var d = pageStack.push(Qt.resolvedUrl("GroupDialog.qml"), { current: account.groupOf(uin) })
+        d.accepted.connect(function() { account.moveContact(uin, d.group) })
+    }
 
     function connectionText() {
         if (!account.hasAccount)
@@ -119,22 +145,12 @@ Page {
                     MenuItem {
                         visible: listed && online
                         text: qsTr("Rename")
-                        onClicked: {
-                            var uin = model.uin
-                            var d = pageStack.push(Qt.resolvedUrl("TextInputDialog.qml"), {
-                                title: qsTr("Rename"), label: qsTr("Name in your list"),
-                                value: account.aliasOf(uin), placeholder: uin, allowEmpty: true })
-                            d.accepted.connect(function() { account.renameContact(uin, d.value) })
-                        }
+                        onClicked: page.renameEntry(model.uin)
                     }
                     MenuItem {
                         visible: listed && online
                         text: qsTr("Move to group")
-                        onClicked: {
-                            var uin = model.uin
-                            var d = pageStack.push(Qt.resolvedUrl("GroupDialog.qml"), { current: account.groupOf(uin) })
-                            d.accepted.connect(function() { account.moveContact(uin, d.group) })
-                        }
+                        onClicked: page.moveEntry(model.uin)
                     }
                     MenuItem {
                         visible: !listed && online
@@ -149,18 +165,7 @@ Page {
                     MenuItem {
                         visible: !listed || online
                         text: listed ? qsTr("Remove from contact list") : qsTr("Delete conversation")
-                        onClicked: {
-                            var uin = model.uin
-                            var wasListed = listed
-                            var who = model.name
-                            // A page-level remorse: list updates must not cancel the removal.
-                            removeRemorse.execute(wasListed ? qsTr("Removing %1").arg(who) : qsTr("Deleting conversation with %1").arg(who), function() {
-                                if (wasListed)
-                                    account.removeContact(uin)
-                                else
-                                    account.deleteConversation(uin)
-                            })
-                        }
+                        onClicked: page.removeEntry(model.uin, model.name, listed)
                     }
                 }
             }

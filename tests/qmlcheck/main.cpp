@@ -154,8 +154,18 @@ int main(int argc, char **argv)
                  { QStringLiteral("contact"), uin }, { QStringLiteral("contactName"), QStringLiteral("Test") } });
     }
 
-    // Let bindings, timers and deferred creation run for a moment.
-    QTimer::singleShot(1500, &app, &QCoreApplication::quit);
+    // Deferred actions must still work after the menu that started them is
+    // gone: run the contact list's remove action through its undo countdown.
+    if (QObject *contacts = create(view.engine(), ctx, root, "pages/ContactsPage.qml")) {
+        const bool ok = QMetaObject::invokeMethod(contacts, "removeEntry",
+            Q_ARG(QVariant, QStringLiteral("100003")), Q_ARG(QVariant, QStringLiteral("Test")), Q_ARG(QVariant, false));
+        fprintf(stderr, "INVOKED   ContactsPage.removeEntry: %s\n", ok ? "ok" : "FAILED");
+        if (!ok)
+            ++g_problems;
+    }
+
+    // Let bindings, timers, deferred creation and the countdown run.
+    QTimer::singleShot(7000, &app, &QCoreApplication::quit);
     app.exec();
 
     fprintf(stderr, "qmlcheck: %d problem(s) in app QML\n", g_problems);

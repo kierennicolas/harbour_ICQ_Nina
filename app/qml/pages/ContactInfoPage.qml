@@ -44,6 +44,11 @@ Page {
         d.accepted.connect(function() { account.renameContact(uin, d.value) })
     }
 
+    function removeThis() {
+        var who = uin
+        remorse.execute(qsTr("Removing %1").arg(name), function() { account.removeContact(who) })
+    }
+
     function move() {
         var d = pageStack.push(Qt.resolvedUrl("GroupDialog.qml"), { current: group })
         d.accepted.connect(function() { account.moveContact(uin, d.group) })
@@ -93,9 +98,7 @@ Page {
             MenuItem {
                 visible: page.isContact && account.state === 2
                 text: qsTr("Remove from contact list")
-                onClicked: remorse.execute(qsTr("Removing %1").arg(page.name), function() {
-                    account.removeContact(page.uin)
-                })
+                onClicked: page.removeThis()
             }
             MenuItem {
                 visible: page.isContact && account.state === 2

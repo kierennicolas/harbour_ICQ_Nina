@@ -7,6 +7,20 @@ Page {
     id: page
     allowedOrientations: Orientation.All
 
+    // Rows are recreated when the groups change, so actions that finish later
+    // (a dialog, the undo countdown) are set up here on the page.
+    RemorsePopup { id: remorse }
+
+    function renameGroup(name) {
+        var d = pageStack.push(Qt.resolvedUrl("TextInputDialog.qml"), {
+            title: qsTr("Rename group"), label: qsTr("Group name"), value: name })
+        d.accepted.connect(function() { account.renameGroup(name, d.value) })
+    }
+
+    function deleteGroup(name) {
+        remorse.execute(qsTr("Deleting %1").arg(name), function() { account.removeGroup(name) })
+    }
+
     function newGroup() {
         var d = pageStack.push(Qt.resolvedUrl("TextInputDialog.qml"), {
             title: qsTr("New group"), label: qsTr("Group name"), acceptText: qsTr("Create") })
@@ -36,25 +50,15 @@ Page {
             menu: ContextMenu {
                 MenuItem {
                     text: qsTr("Rename")
-                    onClicked: {
-                        var name = modelData
-                        var d = pageStack.push(Qt.resolvedUrl("TextInputDialog.qml"), {
-                            title: qsTr("Rename group"), label: qsTr("Group name"), value: name })
-                        d.accepted.connect(function() { account.renameGroup(name, d.value) })
-                    }
+                    onClicked: page.renameGroup(modelData)
                 }
                 MenuItem {
                     text: item.size > 0 ? qsTr("Delete (move its contacts first)") : qsTr("Delete")
                     enabled: item.size === 0
-                    onClicked: {
-                        var name = modelData
-                        remorse.execute(item, qsTr("Deleting"), function() { account.removeGroup(name) })
-                    }
+                    onClicked: page.deleteGroup(modelData)
                 }
             }
             onClicked: openMenu()
-
-            RemorseItem { id: remorse }
 
             Label {
                 x: Theme.horizontalPageMargin

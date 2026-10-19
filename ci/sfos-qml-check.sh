@@ -76,6 +76,6 @@ cat "$HOME/qmlcheck.log"
 grep -E '^\[APP-QML\]' "$HOME/qmlcheck.log" | head -20 | sed -e 's/%/%25/g' | while IFS= read -r line; do
   echo "::error title=App QML::${line#\[APP-QML\] }"
 done
-grep -E '^(CREATED|compiled|qmlcheck:)' "$HOME/qmlcheck.log" | sed ':a;N;$!ba;s/\n/%0A/g' | sed 's/^/::notice title=QML pages::/'
+grep -E '^(CREATED|INVOKED|compiled|qmlcheck:)' "$HOME/qmlcheck.log" | sed ':a;N;$!ba;s/\n/%0A/g' | sed 's/^/::notice title=QML pages::/'
 echo "qml check: $problems problem(s)"
 [ $problems -eq 0 ]
