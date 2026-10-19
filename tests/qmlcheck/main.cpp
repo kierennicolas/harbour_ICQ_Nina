@@ -166,9 +166,11 @@ int main(int argc, char **argv)
              { QStringLiteral("fileSize"), 123456 } });
     for (int state = 0; state <= 7; ++state) {
         create(view.engine(), ctx, root, "components/FileBubble.qml",
-               { { QStringLiteral("outgoing"), state % 2 == 1 }, { QStringLiteral("fileName"), QStringLiteral("photo.jpg") },
+               { { QStringLiteral("outgoing"), state % 2 == 1 }, { QStringLiteral("fileName"), QStringLiteral("photo.png") },
                  { QStringLiteral("fileSize"), 123456 }, { QStringLiteral("fileState"), state },
-                 { QStringLiteral("fileDone"), 1000 }, { QStringLiteral("filePath"), QStringLiteral("/tmp/photo.jpg") },
+                 { QStringLiteral("fileDone"), 1000 },
+                 // A picture that exists (received pictures are previewed).
+                 { QStringLiteral("filePath"), QStringLiteral("/usr/share/harbour-icqnina/stickers/hello.png") },
                  { QStringLiteral("fileUrl"), state == 3 ? QStringLiteral("https://litter.catbox.moe/x.jpg") : QString() },
                  { QStringLiteral("transferId"), state == 3 ? QStringLiteral("link-1") : QStringLiteral("abc") },
                  { QStringLiteral("timestamp"), QDateTime::currentDateTime() },

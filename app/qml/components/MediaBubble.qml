@@ -240,7 +240,7 @@ Item {
         radius: Theme.paddingMedium
         color: bubble.outgoing ? Theme.rgba(Theme.highlightBackgroundColor, 0.35) : Theme.rgba(Theme.secondaryColor, 0.15)
 
-        readonly property bool current: bubble.player && bubble.localUrl.length > 0
+        readonly property bool current: !!bubble.player && bubble.localUrl.length > 0
                                         && bubble.player.source.toString() === bubble.localUrl
         readonly property bool playing: current && bubble.player.playbackState === Audio.PlayingState
         readonly property real total: {

@@ -152,13 +152,11 @@ void BuddyIconTask::sendIcon()
 
 void BuddyIconTask::handleUploadResponse()
 {
-	kDebug(OSCAR_RAW_DEBUG) << "server acked icon upload";
 	Buffer* b = transfer()->buffer();
 	b->skipBytes( 4 );
 	Oscar::BYTE iconHashSize = b->getByte();
 	QByteArray hash( b->getBlock( iconHashSize ) );
-	//check the hash
-	kDebug(OSCAR_RAW_DEBUG) << "hash " << hash.toHex();
+	kDebug(OSCAR_RAW_DEBUG) << "server acked icon upload, hash " << hash.toHex();
 	setSuccess( 0, QString() );
 }
 
@@ -219,26 +217,37 @@ void BuddyIconTask::handleICQBuddyIconResponse()
 	Buffer* b = transfer()->buffer();
 	QString user = b->getBUIN();
 	kDebug(OSCAR_RAW_DEBUG) << "Receiving buddy icon for " << user;
-	
+
 	b->skipBytes(2); //not used
 	Oscar::BYTE iconType = b->getByte();
 	Q_UNUSED( iconType );
-	
+
 	Oscar::BYTE hashSize = b->getByte();
 	QByteArray iconHash( b->getBlock(hashSize) );
-	
-	b->skipBytes(1); //not used
-	b->skipBytes(2); //not used
-	Oscar::BYTE iconType2 = b->getByte();
-	Q_UNUSED( iconType2 );
-	
-	Oscar::BYTE hashSize2 = b->getByte();
-	QByteArray iconHash2( b->getBlock(hashSize2) );
-	
-	Oscar::WORD iconSize = b->getWord();
-	QByteArray icon( b->getBlock(iconSize) );
-	
+
+	// harbour_icq_nina: ICQ servers repeat the hash before the icon
+	// (byte, word, flags, length, hash); some (NINA) answer in the AIM
+	// layout, where the icon's length comes right after the first hash.
+	const int rest = b->bytesAvailable();
+	QByteArray tail = b->getBlock( rest );
+	auto word = [&tail]( int at ) { return ( ( (unsigned char)tail[at] ) << 8 ) | (unsigned char)tail[at + 1]; };
+	int pos = 0;
+	const int icqPos = rest >= 5 ? 5 + (unsigned char)tail[4] : -1;  // byte, word, flags, hash length, hash
+	if ( icqPos >= 0 && icqPos + 2 <= rest && word( icqPos ) == rest - icqPos - 2 )
+		pos = icqPos;                                      // ICQ layout, consistent
+	else if ( rest >= 2 && word( 0 ) == rest - 2 )
+		pos = 0;                                           // AIM layout
+	else if ( icqPos >= 0 )
+		pos = icqPos;
+	QByteArray icon;
+	if ( rest >= pos + 2 )
+	{
+		const int iconSize = ( ( (unsigned char)tail[pos] ) << 8 ) | (unsigned char)tail[pos + 1];
+		icon = tail.mid( pos + 2, iconSize );
+	}
+	kDebug(OSCAR_RAW_DEBUG) << "icon reply: " << rest << " bytes after the hash, icon " << icon.size() << " bytes"
+	                        << ( pos == 0 ? " (AIM layout)" : " (ICQ layout)" );
+
 	emit haveIcon( user, icon );
 	setSuccess( 0, QString() );
 }
-

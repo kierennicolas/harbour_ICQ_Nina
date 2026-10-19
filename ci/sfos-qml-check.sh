@@ -77,9 +77,14 @@ cat "$HOME/qmlcheck.log"
 [ $rc -eq 0 ] || problems=$((problems + 1))
 # The app's own warnings drown in Silica's noise (no real window here), so
 # raise each one as its own annotation.
-grep -E '^\[APP-QML\]' "$HOME/qmlcheck.log" | head -20 | sed -e 's/%/%25/g' | while IFS= read -r line; do
-  echo "::error title=App QML::${line#\[APP-QML\] }"
+grep -E '^\[APP-QML\]' "$HOME/qmlcheck.log" | sort | uniq -c | sort -rn | head -8 | sed -e 's/%/%25/g' | while IFS= read -r line; do
+  echo "::error title=App QML::${line}"
 done
+# All of them (GitHub shows at most 10 errors per step).
+if grep -q '^\[APP-QML\]' "$HOME/qmlcheck.log"; then
+  grep -E '^\[APP-QML\]' "$HOME/qmlcheck.log" | sort | uniq -c | sort -rn | head -60 | sed -e 's/%/%25/g' \
+    | sed ':a;N;$!ba;s/\n/%0A/g' | sed 's/^/::notice title=App QML (all)::/'
+fi
 grep -E '^(CREATED|INVOKED|compiled|qmlcheck:)' "$HOME/qmlcheck.log" | sed ':a;N;$!ba;s/\n/%0A/g' | sed 's/^/::notice title=QML pages::/'
 echo "qml check: $problems problem(s)"
 [ $problems -eq 0 ]

@@ -205,7 +205,8 @@ int main(int argc, char **argv)
         {QStringLiteral("add-contact"), QStringLiteral("Add this id to the server-side list (then --remove-contact may remove it)."), QStringLiteral("id")},
         {QStringLiteral("remove-contact"), QStringLiteral("Remove this id from the server-side list."), QStringLiteral("id")},
         {QStringLiteral("group"), QStringLiteral("Group for --add-contact (the first group if not given)."), QStringLiteral("name")},
-        {QStringLiteral("icon-server"), QStringLiteral("Connect to the buddy icon (BART) server.")},
+        {QStringLiteral("icon-server"), QStringLiteral("Connect to the buddy icon (BART) server and fetch our own picture.")},
+        {QStringLiteral("icon-roundtrip"), QStringLiteral("Upload our own picture again, unchanged (needs --icon-server).")},
         {QStringLiteral("profile-roundtrip"), QStringLiteral("Write our own 'about' text back unchanged and report the server's answer.")},
     });
     p.process(app);
@@ -510,6 +511,12 @@ int main(int argc, char **argv)
     QObject::connect(&client, &Client::haveIconForContact, [&](const QString &id, const QByteArray &data) {
         out(QStringLiteral("ICON-RECEIVED %1 bytes=%2 md5=%3").arg(who(id)).arg(data.size())
             .arg(QString::fromLatin1(QCryptographicHash::hash(data, QCryptographicHash::Md5).toHex())));
+        // The same picture back: tests uploading without changing anything.
+        if (p.isSet(QStringLiteral("icon-roundtrip")) && !data.isEmpty()
+                && Oscar::normalize(id) == Oscar::normalize(client.userId())) {
+            out(QStringLiteral("ICON-UPLOAD bytes=%1").arg(data.size()));
+            client.sendBuddyIcon(data);
+        }
     });
     QObject::connect(&client, &Client::ownProfileSaved, [&](bool ok) {
         out(QStringLiteral("PROFILE-SAVED %1").arg(ok ? "ok" : "refused"));
