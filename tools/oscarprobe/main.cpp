@@ -299,9 +299,12 @@ int main(int argc, char **argv)
     });
     QObject::connect(&client, &Client::haveOwnInfo, [&]() {
         const UserDetails me = client.ourInfo();
-        out(QStringLiteral("OWN-INFO id=%1 class=0x%2 status=0x%3 online_since=%4")
+        out(QStringLiteral("OWN-INFO id=%1 class=0x%2 status=0x%3 online_since=%4 icon=%5")
             .arg(me.userId()).arg(me.userClass(), 0, 16).arg(me.extendedStatus(), 0, 16)
-            .arg(me.onlineSinceTime().toString(Qt::ISODate)));
+            .arg(me.onlineSinceTime().toString(Qt::ISODate))
+            .arg(me.iconSpecified() ? QStringLiteral("type%1/flags%2/%3").arg(me.iconType()).arg(me.iconCheckSumType())
+                                          .arg(QString::fromLatin1(me.buddyIconHash().toHex()))
+                                    : QStringLiteral("none")));
     });
     QObject::connect(&client, &Client::haveContactList, [&]() {
         ContactManager *ssi = client.ssiManager();
