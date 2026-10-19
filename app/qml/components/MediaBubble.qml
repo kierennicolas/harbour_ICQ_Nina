@@ -252,6 +252,12 @@ Item {
             return ms > 0 ? ms : 0
         }
         readonly property real position: current ? bubble.player.position : 0
+        // Why the player could not play this one ("" if it can).
+        readonly property string playError: current && bubble.player.error !== Audio.NoError
+                                            ? bubble.player.errorString : ""
+        // Sending or loading: a separate button cancels or retries, so the
+        // play button always plays what is on the phone.
+        readonly property bool showStatusButton: bubble.outgoing && (bubble.busy || bubble.fileState === bubble.stFailed)
 
         function clock(ms) {
             var s = Math.round(ms / 1000)
@@ -266,12 +272,35 @@ Item {
                 top: parent.top
                 topMargin: (Theme.itemSizeMedium - height) / 2
             }
-            icon.source: bubble.busy ? "image://theme/icon-m-clear"
+            icon.source: bubble.here ? (voice.playing ? "image://theme/icon-m-pause" : "image://theme/icon-m-play")
+                         : bubble.busy ? "image://theme/icon-m-clear"
                          : bubble.fileState === bubble.stFailed ? "image://theme/icon-m-refresh"
-                         : !bubble.here ? "image://theme/icon-m-cloud-download"
-                         : voice.playing ? "image://theme/icon-m-pause" : "image://theme/icon-m-play"
-            onClicked: bubble.act()
+                         : "image://theme/icon-m-cloud-download"
+            onClicked: bubble.here ? bubble.togglePlay() : bubble.act()
 
+            ProgressCircle {
+                anchors.centerIn: parent
+                visible: bubble.busy && !bubble.here
+                width: parent.width * 0.9
+                height: width
+                value: bubble.progress
+                progressColor: Theme.highlightColor
+                backgroundColor: "transparent"
+            }
+        }
+
+        // Your own voice message while it is sent: cancel, or try again.
+        IconButton {
+            id: statusButton
+            visible: voice.showStatusButton
+            anchors {
+                right: parent.right
+                rightMargin: Theme.paddingSmall
+                verticalCenter: playButton.verticalCenter
+            }
+            icon.source: bubble.busy ? "image://theme/icon-m-clear" : "image://theme/icon-m-refresh"
+            onClicked: bubble.busy ? account.media.cancel(bubble.contact, bubble.messageId)
+                                   : account.media.retry(bubble.contact, bubble.messageId)
             ProgressCircle {
                 anchors.centerIn: parent
                 visible: bubble.busy
@@ -288,8 +317,8 @@ Item {
             id: track
             anchors {
                 left: playButton.right
-                right: parent.right
-                rightMargin: Theme.paddingLarge
+                right: voice.showStatusButton ? statusButton.left : parent.right
+                rightMargin: voice.showStatusButton ? Theme.paddingSmall : Theme.paddingLarge
                 verticalCenter: playButton.verticalCenter
             }
             height: Theme.itemSizeExtraSmall
@@ -339,12 +368,14 @@ Item {
             }
             font.pixelSize: Theme.fontSizeTiny
             color: Theme.secondaryColor
-            text: (voice.current ? voice.clock(voice.position) + " / " : "")
+            text: voice.playError.length > 0 ? qsTr("Cannot play: %1").arg(voice.playError)
+                  : (voice.current ? voice.clock(voice.position) + " / " : "")
                   + (voice.total > 0 ? voice.clock(voice.total) : qsTr("Voice message"))
                   + (bubble.busy || bubble.fileState === bubble.stFailed || !bubble.here
                      ? " · " + bubble.placeholderText() : "")
                   + "   " + bubble.timeText
-            truncationMode: TruncationMode.Fade
+            wrapMode: voice.playError.length > 0 ? Text.Wrap : Text.NoWrap
+            truncationMode: voice.playError.length > 0 ? TruncationMode.None : TruncationMode.Fade
         }
     }
 

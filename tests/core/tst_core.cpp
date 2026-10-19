@@ -134,6 +134,10 @@ private slots:
         QCOMPARE(MediaLink::parse(QStringLiteral("https://litter.catbox.moe/a.jpg https://litter.catbox.moe/b.jpg")).type,
                  int(MediaLink::None));
         QCOMPARE(MediaLink::parse(QStringLiteral("Files (1 MB): https://litter.catbox.moe/a.zip")).type, int(MediaLink::None));
+        // Stray control characters (offline messages) do not spoil the link.
+        l = MediaLink::parse(QStringLiteral("Voice message (0:01): https://litter.catbox.moe/v.ogg#icqnina-voice=1300") + QChar(0) + QChar('\r'));
+        QCOMPARE(l.type, int(MediaLink::Voice));
+        QCOMPARE(l.info, QStringLiteral("1300"));
 
         QCOMPARE(MediaLink::messageText(MediaLink::Voice, QStringLiteral("https://litter.catbox.moe/v.ogg"), QStringLiteral("65400")),
                  QStringLiteral("Voice message (1:05): https://litter.catbox.moe/v.ogg#icqnina-voice=65400"));
@@ -306,6 +310,7 @@ private slots:
     void profileDetails();
     void media();
     void outbox();
+    void voiceToOfflineContact();
     void phase2SignOut();
 
     void historySurvivesRestart()
@@ -789,6 +794,34 @@ void TestCore::outbox()
 
     // Survives a restart of the app: the outbox is in the history.
     QCOMPARE(lastRow(aChat, ChatModel::QueuedRole).toBool(), false);
+}
+
+void TestCore::voiceToOfflineContact()
+{
+    if (qgetenv("ICQNINA_TEST_DOWNLOAD_BASE").isEmpty())
+        QSKIP("ICQNINA_TEST_DOWNLOAD_BASE not set");
+    AccountManager &a = *m_a;
+    AccountManager &b = *m_b;
+    b.disconnectAccount();
+    QTest::qWait(1500);
+    ChatModel *aChat = a.chat(QStringLiteral("100002"));
+    ChatModel *bChat = b.chat(QStringLiteral("100001"));
+    const QString wav = makeWav(QStringLiteral("for-later.wav"), 2100);
+    QVERIFY(a.media()->sendVoice(QStringLiteral("100002"), wav, 2100));
+    // Sent (kept by the server, or waiting here); your own copy plays either way.
+    QVERIFY(waitFor([&] { return lastRow(aChat, ChatModel::FileStateRole).toInt() == TransferManager::Done; }, 20000));
+    QVERIFY(QFile::exists(lastRow(aChat, ChatModel::FilePathRole).toString()));
+    QTest::qWait(1500);
+
+    const int before = bChat->rowCount();
+    b.connectAccount();
+    QVERIFY(waitFor([&] { return b.state() == AccountManager::Online; }, 15000));
+    QVERIFY2(waitFor([&] { return bChat->rowCount() > before
+                                  && lastRow(bChat, ChatModel::MediaTypeRole).toInt() == MediaLink::Voice; }, 20000),
+             "the voice message did not arrive");
+    QCOMPARE(lastRow(bChat, ChatModel::MediaInfoRole).toString(), QStringLiteral("2100"));
+    QVERIFY(waitFor([&] { return lastRow(bChat, ChatModel::FileStateRole).toInt() == TransferManager::Done; }, 15000));
+    QCOMPARE(contents(lastRow(bChat, ChatModel::FilePathRole).toString()), contents(wav));
 }
 
 void TestCore::phase2SignOut()

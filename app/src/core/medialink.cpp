@@ -70,9 +70,14 @@ qint64 MediaLink::maxBytes(int type)
     }
 }
 
-MediaLink MediaLink::parse(const QString &text)
+MediaLink MediaLink::parse(const QString &rawText)
 {
     MediaLink link;
+    // Offline messages can come back with stray control characters (a
+    // terminating NUL, CR) that would end up in the link.
+    static const QRegularExpression controls(QStringLiteral("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]"));
+    QString text = rawText;
+    text.remove(controls);
     static const QRegularExpression urlRe(QStringLiteral("https?://[^\\s<>\"']+"),
                                           QRegularExpression::CaseInsensitiveOption);
     QRegularExpressionMatchIterator it = urlRe.globalMatch(text);

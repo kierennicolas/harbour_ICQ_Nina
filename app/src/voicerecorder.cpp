@@ -14,20 +14,43 @@ const int kWavRate = 16000;
 
 struct Choice { const char *codec; const char *container; const char *extension; };
 
-// Best first: small files that browsers can play too.
+// Best first: small files that browsers can play too. The exact names
+// Sailfish OS's recorder offers come first (as other Sailfish messengers
+// use them), then looser matches.
 const Choice kChoices[] = {
+    { "audio/x-opus", "ogg", "ogg" },
+    { "audio/opus", "ogg", "ogg" },
+    { "audio/vorbis", "ogg", "ogg" },
+    { "audio/x-vorbis", "ogg", "ogg" },
     { "opus", "ogg", "ogg" },
     { "vorbis", "ogg", "ogg" },
-    { "aac", "mp4", "m4a" },
-    { "mpeg", "mp4", "m4a" },
 };
 
 QString find(const QStringList &list, const char *what)
 {
     for (const QString &s : list)
+        if (s.compare(QLatin1String(what), Qt::CaseInsensitive) == 0)
+            return s;
+    for (const QString &s : list)
         if (s.contains(QLatin1String(what), Qt::CaseInsensitive))
             return s;
     return QString();
+}
+
+// Whether the file looks like what its name says (a broken recording is
+// not worth sending: nobody could play it).
+bool looksComplete(const QString &path)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return false;
+    const QByteArray head = f.read(12);
+    const QString ext = QFileInfo(path).suffix().toLower();
+    if (ext == QLatin1String("ogg"))
+        return head.startsWith("OggS");
+    if (ext == QLatin1String("wav"))
+        return head.startsWith("RIFF") && head.mid(8, 4) == "WAVE";
+    return true;
 }
 
 QByteArray wavHeader(qint64 dataBytes)
@@ -56,7 +79,8 @@ VoiceRecorder::VoiceRecorder(QObject *parent)
             stop();
     });
     m_finishTimeout.setSingleShot(true);
-    m_finishTimeout.setInterval(4000);
+    // Writing out the container can take a moment after stopping.
+    m_finishTimeout.setInterval(15000);
     connect(&m_finishTimeout, &QTimer::timeout, this, [this]() {
         if (m_finishing)
             deliver(m_recorder ? QUrl(m_recorder->actualLocation()).toLocalFile() : m_path);
@@ -130,12 +154,16 @@ bool VoiceRecorder::startEncoder(const QString &basePath)
     const char *extension = nullptr;
     for (const Choice &c : kChoices) {
         codec = find(codecs, c.codec);
+        // The backend may list containers by MIME type; "ogg" works either way.
         container = find(containers, c.container);
-        if (!codec.isEmpty() && !container.isEmpty()) {
+        if (container.isEmpty() && !codec.isEmpty())
+            container = QLatin1String(c.container);
+        if (!codec.isEmpty()) {
             extension = c.extension;
             break;
         }
     }
+    qInfo() << "voice: recording" << codec << "in" << container;
     if (!extension) {
         dropRecorder();
         return false;
@@ -277,6 +305,13 @@ void VoiceRecorder::deliver(const QString &path)
     if (m_duration < 500 || !fi.exists() || fi.size() < 200) {
         QFile::remove(path);
         setError(tr("Too short. Tap the microphone, speak, then tap send."));
+        emit failed(m_error);
+        return;
+    }
+    if (!looksComplete(path)) {
+        qWarning() << "voice: incomplete recording" << path << fi.size();
+        QFile::remove(path);
+        setError(tr("The recording could not be saved. Please try again."));
         emit failed(m_error);
         return;
     }
