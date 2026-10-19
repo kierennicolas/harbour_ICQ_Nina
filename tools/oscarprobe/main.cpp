@@ -213,6 +213,8 @@ int main(int argc, char **argv)
         {QStringLiteral("icon-server"), QStringLiteral("Connect to the buddy icon (BART) server and fetch our own picture.")},
         {QStringLiteral("icon-roundtrip"), QStringLiteral("Upload our own picture again, unchanged (needs --icon-server).")},
         {QStringLiteral("profile-roundtrip"), QStringLiteral("Write our own 'about' text back unchanged and report the server's answer.")},
+        {QStringLiteral("profile-classic-test"), QStringLiteral("Whether the server keeps email, home page, gender and birthday "
+                                                                 "written the classic way (0x03EA/0x03FD); originals put back.")},
         {QStringLiteral("profile-fields-test"), QStringLiteral("Which of our own details the server keeps after a TLV write "
                                                                 "(markers in each field, then the originals put back).")},
         {QStringLiteral("profile-test"), QStringLiteral("Which way of saving our own details the server keeps: write a marker into our 'about' text "
@@ -376,6 +378,80 @@ int main(int argc, char **argv)
                 }
                 out(QStringLiteral("ICON-SERVER requesting"));
                 client.connectToIconServer();
+            });
+        }
+        if (p.isSet(QStringLiteral("profile-classic-test"))) {
+            struct Saved { ICQGeneralUserInfo g; ICQMoreUserInfo m; };
+            auto saved = std::make_shared<Saved>();
+            const QByteArray stamp = QDateTime::currentDateTimeUtc().toString(QStringLiteral("hhmmss")).toLatin1();
+            auto basic = [](const ICQGeneralUserInfo &g, const QByteArray &email, bool publish) {
+                Buffer b;
+                for (const QByteArray &v : { g.nickName.get(), g.firstName.get(), g.lastName.get(), email, g.city.get(),
+                                             g.state.get(), g.phoneNumber.get(), g.faxNumber.get(), g.address.get(),
+                                             g.cellNumber.get(), g.zip.get() })
+                    b.addLELNTS(v.constData());
+                b.addLEWord(quint16(g.country.get()));
+                b.addByte(quint8(g.timezone.get()));
+                b.addByte(publish ? 0x00 : 0x01);
+                return b.buffer();
+            };
+            auto more = [](const ICQMoreUserInfo &m, int gender, const QByteArray &homepage, int y, int mo, int d) {
+                Buffer b;
+                b.addLEWord(quint16(m.age.get()));
+                b.addByte(quint8(gender));
+                b.addLELNTS(homepage.constData());
+                b.addLEWord(quint16(y));
+                b.addByte(quint8(mo));
+                b.addByte(quint8(d));
+                b.addByte(quint8(m.lang1.get()));
+                b.addByte(quint8(m.lang2.get()));
+                b.addByte(quint8(m.lang3.get()));
+                return b.buffer();
+            };
+            client.requestFullInfo(uin);
+            QTimer::singleShot(6000, [&client, uin, saved, stamp, basic, more]() {
+                saved->g = client.getGeneralInfo(uin);
+                saved->m = client.getMoreInfo(uin);
+                out(QStringLiteral("PROFILE-CLASSIC writing markers (0x03EA, 0x03FD); original gender=%1 birthday=%2-%3-%4")
+                    .arg(saved->m.gender.get()).arg(saved->m.birthdayYear.get()).arg(saved->m.birthdayMonth.get())
+                    .arg(saved->m.birthdayDay.get()));
+                client.sendIcqMetaWrite(0x03EA, basic(saved->g, "e" + stamp + "@example.org", true));
+                client.sendIcqMetaWrite(0x03FD, more(saved->m, saved->m.gender.get() == 2 ? 1 : 2,
+                                                     "https://example.org/" + stamp, 1971, 7, 23));
+            });
+            QTimer::singleShot(9000, [&client, uin]() { client.requestFullInfo(uin); });
+            QTimer::singleShot(15000, [&client, uin, saved, stamp]() {
+                const ICQGeneralUserInfo g = client.getGeneralInfo(uin);
+                const ICQMoreUserInfo m = client.getMoreInfo(uin);
+                auto field = [](const char *name, const QByteArray &got, const QByteArray &want) {
+                    out(QStringLiteral("PROFILE-CLASSIC %1 kept=%2").arg(QLatin1String(name))
+                        .arg(got == want ? "yes" : got == want + '\0' ? "with-extra-nul"
+                             : got.isEmpty() ? "no(empty)" : "no(changed)"));
+                };
+                field("email", g.email.get(), "e" + stamp + "@example.org");
+                field("homepage", m.homepage.get(), "https://example.org/" + stamp);
+                field("nickname-unchanged", g.nickName.get(), saved->g.nickName.get());
+                out(QStringLiteral("PROFILE-CLASSIC gender kept=%1 (read %2) birthday kept=%3 (read %4-%5-%6) email-public=%7")
+                    .arg(int(m.gender.get()) == (saved->m.gender.get() == 2 ? 1 : 2) ? "yes" : "no").arg(m.gender.get())
+                    .arg(m.birthdayYear.get() == 1971 && m.birthdayMonth.get() == 7 && m.birthdayDay.get() == 23 ? "yes" : "no")
+                    .arg(m.birthdayYear.get()).arg(m.birthdayMonth.get()).arg(m.birthdayDay.get())
+                    .arg(g.publishEmail.get() ? 1 : 0));
+            });
+            QTimer::singleShot(16000, [&client, saved, basic, more]() {
+                out(QStringLiteral("PROFILE-CLASSIC putting the originals back"));
+                client.sendIcqMetaWrite(0x03EA, basic(saved->g, saved->g.email.get(), saved->g.publishEmail.get()));
+                client.sendIcqMetaWrite(0x03FD, more(saved->m, int(saved->m.gender.get()), saved->m.homepage.get(),
+                                                     saved->m.birthdayYear.get(), saved->m.birthdayMonth.get(),
+                                                     saved->m.birthdayDay.get()));
+            });
+            QTimer::singleShot(19000, [&client, uin]() { client.requestFullInfo(uin); });
+            QTimer::singleShot(25000, [&client, uin, saved]() {
+                const ICQGeneralUserInfo g = client.getGeneralInfo(uin);
+                const ICQMoreUserInfo m = client.getMoreInfo(uin);
+                const bool back = g.nickName.get() == saved->g.nickName.get() && g.email.get() == saved->g.email.get()
+                        && g.city.get() == saved->g.city.get() && m.homepage.get() == saved->m.homepage.get()
+                        && m.gender.get() == saved->m.gender.get() && m.birthdayYear.get() == saved->m.birthdayYear.get();
+                out(QStringLiteral("PROFILE-CLASSIC originals back=%1").arg(back ? "yes" : "no"));
             });
         }
         if (p.isSet(QStringLiteral("profile-fields-test"))) {

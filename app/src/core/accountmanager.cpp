@@ -2025,11 +2025,47 @@ bool AccountManager::saveProfile(const QVariantMap &f)
 {
     if (!isOnline() || !isIcq() || m_savingProfile)
         return false;
-    // Start from what the server has, so fields this page does not edit
-    // are not cleared.
-    ICQGeneralUserInfo *g = new ICQGeneralUserInfo(m_client->getGeneralInfo(m_uin));
-    ICQMoreUserInfo *m = new ICQMoreUserInfo(m_client->getMoreInfo(m_uin));
-    ICQNotesInfo *n = new ICQNotesInfo(m_client->getNotesInfo(m_uin));
+    // Start from what the server has and send only what changed: fields
+    // this page does not edit (and everything, if the server's copy has not
+    // arrived) are left alone, so e.g. "others must ask" is never reset.
+    const ICQGeneralUserInfo cg = m_client->getGeneralInfo(m_uin);
+    const ICQMoreUserInfo cm = m_client->getMoreInfo(m_uin);
+    const ICQNotesInfo cn = m_client->getNotesInfo(m_uin);
+    ICQGeneralUserInfo *g = new ICQGeneralUserInfo;
+    g->nickName = cg.nickName.get();
+    g->firstName = cg.firstName.get();
+    g->lastName = cg.lastName.get();
+    g->email = cg.email.get();
+    g->city = cg.city.get();
+    g->state = cg.state.get();
+    g->phoneNumber = cg.phoneNumber.get();
+    g->faxNumber = cg.faxNumber.get();
+    g->address = cg.address.get();
+    g->cellNumber = cg.cellNumber.get();
+    g->zip = cg.zip.get();
+    g->country = cg.country.get();
+    g->timezone = cg.timezone.get();
+    g->publishEmail = cg.publishEmail.get();
+    g->allowsDC = cg.allowsDC.get();
+    g->webAware = cg.webAware.get();
+    g->needsAuth = cg.needsAuth.get();
+    ICQMoreUserInfo *m = new ICQMoreUserInfo;
+    m->age = cm.age.get();
+    m->gender = cm.gender.get();
+    m->homepage = cm.homepage.get();
+    m->birthdayYear = cm.birthdayYear.get();
+    m->birthdayMonth = cm.birthdayMonth.get();
+    m->birthdayDay = cm.birthdayDay.get();
+    m->lang1 = cm.lang1.get();
+    m->lang2 = cm.lang2.get();
+    m->lang3 = cm.lang3.get();
+    m->ocity = cm.ocity.get();
+    m->ostate = cm.ostate.get();
+    m->ocountry = cm.ocountry.get();
+    m->marital = cm.marital.get();
+    m->sendInfo = cm.sendInfo.get();
+    ICQNotesInfo *n = new ICQNotesInfo;
+    n->notes = cn.notes.get();
     auto text = [&f](const char *key) { return f.value(QLatin1String(key)).toString().trimmed().toUtf8(); };
     g->nickName.set(text("nickname"));
     g->firstName.set(text("firstName"));
