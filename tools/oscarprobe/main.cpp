@@ -205,6 +205,8 @@ int main(int argc, char **argv)
         {QStringLiteral("add-contact"), QStringLiteral("Add this id to the server-side list (then --remove-contact may remove it)."), QStringLiteral("id")},
         {QStringLiteral("remove-contact"), QStringLiteral("Remove this id from the server-side list."), QStringLiteral("id")},
         {QStringLiteral("group"), QStringLiteral("Group for --add-contact (the first group if not given)."), QStringLiteral("name")},
+        {QStringLiteral("icon-server"), QStringLiteral("Connect to the buddy icon (BART) server.")},
+        {QStringLiteral("profile-roundtrip"), QStringLiteral("Write our own 'about' text back unchanged and report the server's answer.")},
     });
     p.process(app);
 
@@ -341,6 +343,29 @@ int main(int argc, char **argv)
                 });
             }
         }
+        if (p.isSet(QStringLiteral("icon-server"))) {
+            QTimer::singleShot(1000, [&client]() {
+                // Some servers offer the icon family on the main connection.
+                if (client.hasIconConnection()) {
+                    out(QStringLiteral("ICON-SERVER connected (on the main connection)"));
+                    return;
+                }
+                out(QStringLiteral("ICON-SERVER requesting"));
+                client.connectToIconServer();
+            });
+        }
+        if (p.isSet(QStringLiteral("profile-roundtrip"))) {
+            client.requestFullInfo(uin);
+            QTimer::singleShot(6000, [&client, uin]() {
+                ICQNotesInfo *n = new ICQNotesInfo;
+                n->notes.set(client.getNotesInfo(uin).notes.get());
+                QList<ICQInfoBase*> list;
+                list << n;
+                out(QStringLiteral("PROFILE-WRITE notes_length=%1").arg(n->notes.get().size()));
+                if (!client.updateProfile(list))
+                    delete n;
+            });
+        }
         if (p.isSet(QStringLiteral("info"))) {
             const QString id = p.value(QStringLiteral("info"));
             out(QStringLiteral("INFO-REQUEST %1").arg(who(id)));
@@ -463,6 +488,10 @@ int main(int argc, char **argv)
     });
     QObject::connect(client.ssiManager(), &ContactManager::contactRemoved, [&](const QString &id) {
         out(QStringLiteral("SSI-CONTACT-REMOVED %1").arg(who(id)));
+    });
+    QObject::connect(&client, &Client::iconServerConnected, [&]() { out(QStringLiteral("ICON-SERVER connected")); });
+    QObject::connect(&client, &Client::ownProfileSaved, [&](bool ok) {
+        out(QStringLiteral("PROFILE-SAVED %1").arg(ok ? "ok" : "refused"));
     });
     QObject::connect(&client, &Client::contactAddedYou, [&](const QString &id) {
         out(QStringLiteral("ADDED-YOU %1").arg(who(id)));

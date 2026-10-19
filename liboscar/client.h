@@ -528,6 +528,9 @@ Q_SIGNALS:
 	/** harbour_icq_nina: the server refused a contact list change. */
 	void contactEditFailed( const QString& name, int code );
 
+	/** harbour_icq_nina: the answer to updateProfile(). */
+	void ownProfileSaved( bool ok );
+
 	/** we've received a ICQ password change reply */
 	void icqPasswordChanged( bool error );
 
@@ -646,6 +649,9 @@ protected Q_SLOTS:
 
 	/* harbour_icq_nina: 04/10 retrieval did not work; ask the ICQ way. */
 	void offlineRetrievalFinished();
+
+	/* harbour_icq_nina: an ICQUserInfoUpdateTask finished. */
+	void profileUpdateFinished();
 
 private:
 

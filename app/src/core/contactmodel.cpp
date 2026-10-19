@@ -32,6 +32,7 @@ QVariant ContactModel::data(const QModelIndex &index, int role) const
     case LastMessageTimeRole: return c.lastMessageTime;
     case AwaitingAuthRole: return c.awaitingAuth;
     case TypingRole: return c.typing;
+    case IconRole: return c.icon;
     }
     return QVariant();
 }
@@ -50,6 +51,7 @@ QHash<int, QByteArray> ContactModel::roleNames() const
         { LastMessageTimeRole, "lastMessageTime" },
         { AwaitingAuthRole, "awaitingAuth" },
         { TypingRole, "typing" },
+        { IconRole, "icon" },
     };
 }
 
@@ -91,6 +93,8 @@ void ContactModel::setContacts(const QVector<Item> &items)
             c.presence = o.presence;
             c.statusMessage = o.statusMessage;
             c.unread = qMax(c.unread, o.unread);
+            if (c.icon.isEmpty())
+                c.icon = o.icon;
             if (c.lastMessage.isEmpty()) {
                 c.lastMessage = o.lastMessage;
                 c.lastMessageTime = o.lastMessageTime;
@@ -255,6 +259,21 @@ int ContactModel::presenceOf(const QString &uin) const
 bool ContactModel::contains(const QString &uin) const
 {
     return indexOf(uin) >= 0;
+}
+
+void ContactModel::setIcon(const QString &uin, const QString &url)
+{
+    const int i = indexOf(uin);
+    if (i < 0 || m_items.at(i).icon == url)
+        return;
+    m_items[i].icon = url;
+    changed(i, { IconRole });
+}
+
+QString ContactModel::iconOf(const QString &uin) const
+{
+    const int i = indexOf(uin);
+    return i >= 0 ? m_items.at(i).icon : QString();
 }
 
 bool ContactModel::isAwaitingAuth(const QString &uin) const

@@ -1427,6 +1427,7 @@ bool Client::updateProfile( const QList<ICQInfoBase*>& infoList )
 
 	ICQUserInfoUpdateTask* ui = new ICQUserInfoUpdateTask( c->rootTask() );
 	ui->setInfo( infoList );
+	connect( ui, SIGNAL(finished()), this, SLOT(profileUpdateFinished()) );
 	ui->go( Task::AutoDelete );
 	return true;
 }
@@ -1898,6 +1899,12 @@ void Client::setAuthorizationRequired( bool required )
 	infoList.append( info );
 	if ( !updateProfile( infoList ) )
 		delete info;
+}
+
+void Client::profileUpdateFinished()
+{
+	if ( Task *task = qobject_cast<Task*>( sender() ) )
+		emit ownProfileSaved( task->success() );
 }
 
 }

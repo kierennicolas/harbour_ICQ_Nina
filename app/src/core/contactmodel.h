@@ -39,7 +39,8 @@ public:
         LastMessageRole,
         LastMessageTimeRole,
         AwaitingAuthRole,
-        TypingRole
+        TypingRole,
+        IconRole          // file URL of the round profile picture, or empty
     };
 
     struct Item {
@@ -53,6 +54,7 @@ public:
         QDateTime lastMessageTime;
         bool awaitingAuth = false;
         bool typing = false;
+        QString icon;
     };
 
     explicit ContactModel(QObject *parent = nullptr);
@@ -71,6 +73,8 @@ public:
     void setUnread(const QString &uin, int unread);
     void setLastMessage(const QString &uin, const QString &text, const QDateTime &when);
     void setTyping(const QString &uin, bool typing);
+    void setIcon(const QString &uin, const QString &url);
+    Q_INVOKABLE QString iconOf(const QString &uin) const;
 
     Q_INVOKABLE QString displayName(const QString &uin) const;
     Q_INVOKABLE int presenceOf(const QString &uin) const;

@@ -1,6 +1,7 @@
 // Part of harbour_icq_nina; GPL-3.0-or-later.
 #include "accountmanager.h"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QUrl>
@@ -173,6 +174,18 @@ AccountManager::AccountManager(const QString &configDir, const QString &dataDir,
     m_searchTimer.setSingleShot(true);
     m_searchTimer.setInterval(20000);
     connect(&m_searchTimer, &QTimer::timeout, this, &AccountManager::finishSearch);
+    m_iconTimer.setInterval(400); // one icon request at a time, gently
+    connect(&m_iconTimer, &QTimer::timeout, this, &AccountManager::requestNextIcon);
+    m_profileTimer.setSingleShot(true);
+    m_profileTimer.setInterval(15000);
+    connect(&m_profileTimer, &QTimer::timeout, this, [this]() {
+        if (!m_savingProfile)
+            return;
+        m_savingProfile = false;
+        emit savingProfileChanged();
+        emit profileSaved(false, tr("The server did not answer. Your details may not have been saved."));
+    });
+    m_avatars.open(m_dataDir + QStringLiteral("/icons"));
 
     m_reconnectTimer.setSingleShot(true);
     connect(&m_reconnectTimer, &QTimer::timeout, this, &AccountManager::reconnect);
@@ -312,6 +325,8 @@ void AccountManager::openHistory()
             items.append(it);
         }
     }
+    for (ContactModel::Item &it : items)
+        it.icon = m_avatars.roundUrl(m_avatars.hashOf(normalized(it.uin)));
     m_contacts->setContacts(items);
 }
 
@@ -469,6 +484,10 @@ void AccountManager::startClient()
     connect(m_client, &Client::gotSearchResults, this, &AccountManager::onSearchResult);
     connect(m_client, &Client::endOfSearch, this, &AccountManager::onSearchEnd);
     connect(m_client, &Client::incomingFileTransfer, this, &AccountManager::onIncomingFile);
+    connect(m_client, &Client::iconServerConnected, this, &AccountManager::onIconServerConnected);
+    connect(m_client, &Client::haveIconForContact, this, &AccountManager::onHaveIcon);
+    connect(m_client, &Client::iconNeedsUploading, this, &AccountManager::onIconNeedsUploading);
+    connect(m_client, &Client::ownProfileSaved, this, &AccountManager::onOwnProfileSaved);
     ContactManager *ssi = m_client->ssiManager();
     connect(ssi, &ContactManager::contactAdded, this, &AccountManager::onContactChanged);
     connect(ssi, &ContactManager::contactUpdated, this, &AccountManager::onContactChanged);
@@ -497,6 +516,15 @@ void AccountManager::dropClient()
     m_transfers->setClient(nullptr);
     if (m_searching)
         finishSearch();
+    m_iconTimer.stop();
+    m_iconConnecting = false;
+    for (WantedIcon &w : m_wantedIcons)
+        w.requested = false;
+    if (m_savingProfile) {
+        m_savingProfile = false;
+        m_profileTimer.stop();
+        emit savingProfileChanged();
+    }
     c->close();
     c->deleteLater();
     // Messages still waiting for an acknowledgement stay "sending".
@@ -536,6 +564,7 @@ void AccountManager::rebuildContactsFromServer()
         it.group = groupName(c.gid());
         it.awaitingAuth = c.waitingAuth();
         it.unread = m_history.unreadCount(it.uin);
+        it.icon = m_avatars.roundUrl(m_avatars.hashOf(normalized(it.uin)));
         items.append(it);
         cache.append({ it.uin, it.alias, it.group });
     }
@@ -676,6 +705,11 @@ void AccountManager::onHaveOwnInfo()
 {
     if (m_state == Online)
         m_livenessTimer.stop();
+    if (m_client) {
+        const UserDetails me = m_client->ourInfo();
+        if (me.iconSpecified())
+            handleIcon(m_uin, me.buddyIconHash(), me.iconType(), me.iconCheckSumType());
+    }
 }
 
 void AccountManager::onTaskError(const Oscar::SNAC &snac, int code, bool fatal)
@@ -981,6 +1015,8 @@ void AccountManager::setTyping(const QString &uin, bool typing)
 
 void AccountManager::onUserInfo(const QString &contact, const UserDetails &details)
 {
+    if (details.iconSpecified())
+        handleIcon(contact, details.buddyIconHash(), details.iconType(), details.iconCheckSumType());
     if (Oscar::normalize(contact) == Oscar::normalize(m_uin))
         return;
     m_contacts->setPresence(contact, presenceFromDetails(details));
@@ -1099,6 +1135,10 @@ bool AccountManager::addContact(const QString &rawUin, const QString &group, con
     }
     if (normalized(uin) == normalized(m_uin)) {
         emit contactEditFailed(uin, tr("That is your own number."));
+        return false;
+    }
+    if (uin.at(0).isDigit() && !isValidUin(uin)) {
+        emit contactEditFailed(uin, tr("%1 is not an ICQ number (they go up to 4294967295).").arg(uin));
         return false;
     }
     if (isContact(uin)) {
@@ -1383,6 +1423,7 @@ bool AccountManager::startSearch()
 {
     if (!isOnline() || !isIcq())
         return false;
+    m_searchUin.clear();
     m_search->clear();
     m_searching = true;
     emit searchingChanged();
@@ -1410,15 +1451,28 @@ bool AccountManager::searchByUin(const QString &rawUin)
 {
     QString uin = rawUin;
     uin.remove(QRegularExpression(QStringLiteral("[^0-9]")));
-    if (uin.isEmpty() || !startSearch())
+    if (!isValidUin(uin) || !startSearch())
         return false;
+    m_searchUin = uin;
     m_client->uinSearch(uin);
     return true;
+}
+
+bool AccountManager::isValidUin(const QString &uin)
+{
+    // ICQ numbers are 32-bit; anything longer wraps around on the wire
+    // (an over-long number came back as the server's account 1).
+    bool ok = false;
+    const qulonglong n = uin.toULongLong(&ok);
+    return ok && uin.length() <= 10 && n >= 1 && n <= 0xFFFFFFFFull;
 }
 
 void AccountManager::onSearchResult(const ICQSearchResult &r)
 {
     if (!m_searching || r.uin == 0)
+        return;
+    // A number search has exactly one right answer.
+    if (!m_searchUin.isEmpty() && QString::number(r.uin) != m_searchUin)
         return;
     SearchModel::Item it;
     it.uin = QString::number(r.uin);
@@ -1547,5 +1601,241 @@ void AccountManager::setFileMessageProgress(const QString &uin, qint64 id, qint6
 {
     if (ChatModel *c = m_chats.value(normalized(uin)))
         c->setFileDone(id, bytes);
+}
+
+// ---- profile pictures -------------------------------------------------------
+
+QString AccountManager::pictureOf(const QString &uin) const
+{
+    return m_avatars.roundUrl(m_avatars.hashOf(normalized(uin)));
+}
+
+QString AccountManager::largePictureOf(const QString &uin) const
+{
+    return m_avatars.squareUrl(m_avatars.hashOf(normalized(uin)));
+}
+
+QString AccountManager::ownPicture() const
+{
+    return m_uin.isEmpty() ? QString() : pictureOf(m_uin);
+}
+
+void AccountManager::handleIcon(const QString &contact, const QByteArray &hash, int type, int hashType)
+{
+    const QString key = normalized(contact);
+    const bool own = key == normalized(m_uin);
+    if (Avatars::isClearHash(hash)) {
+        if (!m_avatars.hashOf(key).isEmpty()) {
+            m_avatars.setHash(key, QByteArray());
+            m_contacts->setIcon(contact, QString());
+            emit pictureChanged(contact);
+            if (own)
+                emit ownInfoChanged();
+        }
+        return;
+    }
+    const QString url = m_avatars.roundUrl(hash);
+    if (!url.isEmpty()) {
+        if (m_avatars.hashOf(key) != hash || m_contacts->iconOf(contact) != url) {
+            m_avatars.setHash(key, hash);
+            m_contacts->setIcon(contact, url);
+            emit pictureChanged(contact);
+            if (own)
+                emit ownInfoChanged();
+        }
+        return;
+    }
+    WantedIcon &w = m_wantedIcons[key];
+    if (w.hash == hash && w.requested)
+        return;
+    w.contact = contact;
+    w.hash = hash;
+    w.type = type;
+    w.hashType = hashType;
+    w.requested = false;
+    if (!m_client)
+        return;
+    if (m_client->hasIconConnection()) {
+        if (!m_iconTimer.isActive())
+            m_iconTimer.start();
+    } else if (!m_iconConnecting) {
+        m_iconConnecting = true;
+        m_client->connectToIconServer();
+    }
+}
+
+void AccountManager::onIconServerConnected()
+{
+    m_iconConnecting = false;
+    m_iconTimer.start();
+    if (m_uploadWhenConnected)
+        uploadOwnIcon();
+}
+
+void AccountManager::requestNextIcon()
+{
+    if (!m_client || !m_client->hasIconConnection()) {
+        m_iconTimer.stop();
+        return;
+    }
+    for (WantedIcon &w : m_wantedIcons) {
+        if (w.requested)
+            continue;
+        w.requested = true;
+        m_client->requestBuddyIcon(w.contact, w.hash, Oscar::WORD(w.type), Oscar::BYTE(w.hashType));
+        return;
+    }
+    m_iconTimer.stop();
+}
+
+void AccountManager::onHaveIcon(const QString &contact, const QByteArray &data)
+{
+    const QString key = normalized(contact);
+    QByteArray hash = m_wantedIcons.value(key).hash;
+    if (hash.isEmpty())
+        hash = QCryptographicHash::hash(data, QCryptographicHash::Md5);
+    m_wantedIcons.remove(key);
+    const QString url = m_avatars.store(hash, data);
+    if (url.isEmpty())
+        return;
+    m_avatars.setHash(key, hash);
+    m_contacts->setIcon(contact, url);
+    emit pictureChanged(contact);
+    if (key == normalized(m_uin))
+        emit ownInfoChanged();
+}
+
+bool AccountManager::setOwnPicture(const QString &pathOrUrl)
+{
+    const QString path = pathOrUrl.startsWith(QLatin1String("file:")) ? QUrl(pathOrUrl).toLocalFile() : pathOrUrl;
+    if (!isOnline()) {
+        emit profileSaved(false, tr("Go online to change your picture."));
+        return false;
+    }
+    QString error;
+    // 96 px fits phones and desktop clients; old clients refuse icons over 7 KB.
+    const QByteArray data = Avatars::makeIcon(path, 96, 7000, &error);
+    if (data.isEmpty()) {
+        emit profileSaved(false, error);
+        return false;
+    }
+    const QByteArray hash = QCryptographicHash::hash(data, QCryptographicHash::Md5);
+    m_avatars.store(hash, data);
+    QFile raw(m_avatars.dir() + QStringLiteral("/%1.icon").arg(QString::fromLatin1(hash.toHex())));
+    if (raw.open(QIODevice::WriteOnly))
+        raw.write(data);
+    m_avatars.setHash(normalized(m_uin), hash);
+    emit ownInfoChanged();
+
+    // The picture's hash goes into the server-side list (item type 0x14,
+    // TLV 0xD5: flags, length, MD5); the server then asks for the picture.
+    ContactManager *ssi = m_client->ssiManager();
+    const OContact old = ssi->findItemForIconByRef(1);
+    QByteArray info;
+    info.append(char(0x01));
+    info.append(char(hash.size()));
+    info.append(hash);
+    QList<Oscar::TLV> tlvs;
+    tlvs << Oscar::TLV(0x00D5, Oscar::WORD(info.size()), info) << Oscar::TLV(0x0131, 0, QByteArray());
+    const OContact item(QStringLiteral("1"), 0, old ? old.bid() : ssi->nextContactId(), Oscar::ROSTER_BUDDYICONS, tlvs);
+    m_client->modifyContactItem(old, item);
+    m_ownIconUpload = data;
+    // Servers that do not ask still get it.
+    QTimer::singleShot(4000, this, [this]() {
+        if (!m_ownIconUpload.isEmpty())
+            uploadOwnIcon();
+    });
+    return true;
+}
+
+void AccountManager::onIconNeedsUploading()
+{
+    if (m_ownIconUpload.isEmpty()) {
+        // After a reconnect the server may want the picture again.
+        const QByteArray hash = m_avatars.hashOf(normalized(m_uin));
+        QFile raw(m_avatars.dir() + QStringLiteral("/%1.icon").arg(QString::fromLatin1(hash.toHex())));
+        if (hash.isEmpty() || !raw.open(QIODevice::ReadOnly))
+            return;
+        m_ownIconUpload = raw.readAll();
+    }
+    uploadOwnIcon();
+}
+
+void AccountManager::uploadOwnIcon()
+{
+    if (!m_client || m_ownIconUpload.isEmpty())
+        return;
+    if (!m_client->hasIconConnection()) {
+        m_uploadWhenConnected = true;
+        if (!m_iconConnecting) {
+            m_iconConnecting = true;
+            m_client->connectToIconServer();
+        }
+        return;
+    }
+    m_uploadWhenConnected = false;
+    m_client->sendBuddyIcon(m_ownIconUpload);
+    m_ownIconUpload.clear();
+}
+
+void AccountManager::removeOwnPicture()
+{
+    if (!isOnline())
+        return;
+    const OContact old = m_client->ssiManager()->findItemForIconByRef(1);
+    if (old)
+        m_client->modifyContactItem(old, OContact());
+    m_ownIconUpload.clear();
+    m_avatars.setHash(normalized(m_uin), QByteArray());
+    emit ownInfoChanged();
+}
+
+// ---- own profile --------------------------------------------------------------
+
+bool AccountManager::saveProfile(const QVariantMap &f)
+{
+    if (!isOnline() || !isIcq() || m_savingProfile)
+        return false;
+    // Start from what the server has, so fields this page does not edit
+    // are not cleared.
+    ICQGeneralUserInfo *g = new ICQGeneralUserInfo(m_client->getGeneralInfo(m_uin));
+    ICQMoreUserInfo *m = new ICQMoreUserInfo(m_client->getMoreInfo(m_uin));
+    ICQNotesInfo *n = new ICQNotesInfo(m_client->getNotesInfo(m_uin));
+    auto text = [&f](const char *key) { return f.value(QLatin1String(key)).toString().trimmed().toUtf8(); };
+    g->nickName.set(text("nickname"));
+    g->firstName.set(text("firstName"));
+    g->lastName.set(text("lastName"));
+    g->email.set(text("email"));
+    g->city.set(text("city"));
+    g->state.set(text("state"));
+    m->homepage.set(text("homepage"));
+    m->gender.set(f.value(QStringLiteral("gender")).toUInt());
+    const QDate birthday = f.value(QStringLiteral("birthday")).toDate();
+    m->birthdayYear.set(birthday.isValid() ? birthday.year() : 0);
+    m->birthdayMonth.set(birthday.isValid() ? birthday.month() : 0);
+    m->birthdayDay.set(birthday.isValid() ? birthday.day() : 0);
+    n->notes.set(text("about"));
+    QList<ICQInfoBase*> list;
+    list << g << m << n;
+    if (!m_client->updateProfile(list)) {
+        qDeleteAll(list);
+        return false;
+    }
+    m_savingProfile = true;
+    m_profileTimer.start();
+    emit savingProfileChanged();
+    return true;
+}
+
+void AccountManager::onOwnProfileSaved(bool ok)
+{
+    if (!m_savingProfile)
+        return; // e.g. the "authorization required" switch
+    m_savingProfile = false;
+    m_profileTimer.stop();
+    emit savingProfileChanged();
+    emit profileSaved(ok, ok ? QString() : tr("The server did not accept the changes."));
+    if (ok && m_client)
+        m_client->requestFullInfo(m_uin);
 }
 

@@ -6,6 +6,8 @@
 #include <QtTest>
 #include <QGuiApplication>
 #include <QTemporaryDir>
+#include <QImage>
+#include <QPainter>
 
 #include "accountmanager.h"
 #include "chatmodel.h"
@@ -152,6 +154,8 @@ private slots:
     void fileThroughProxy();
     void fileAsLink();
     void offlineMessage();
+    void profilePicture();
+    void profileDetails();
     void phase2SignOut();
 
     void historySurvivesRestart()
@@ -418,6 +422,62 @@ void TestCore::offlineMessage()
     QVERIFY(waitFor([&] { return count() == 1; }, 15000));
     QTest::qWait(3000);
     QCOMPARE(count(), 1); // not twice
+}
+
+void TestCore::profilePicture()
+{
+    AccountManager &a = *m_a;
+    AccountManager &b = *m_b;
+    // A needs B on the list to be told about B's picture.
+    if (!a.isContact(QStringLiteral("100002"))) {
+        a.addContact(QStringLiteral("100002"), QStringLiteral("Buddies"));
+        QVERIFY(waitFor([&] { return a.isContact(QStringLiteral("100002")); }, 10000));
+    }
+    QImage image(400, 300, QImage::Format_RGB32);
+    image.fill(QColor(30, 160, 110));
+    QPainter p(&image);
+    p.setBrush(Qt::white);
+    p.drawEllipse(120, 70, 160, 160);
+    p.end();
+    const QString path = m_files.path() + "/me.jpg";
+    QVERIFY(image.save(path, "JPEG"));
+
+    QVERIFY(b.setOwnPicture(QUrl::fromLocalFile(path).toString()));
+    QVERIFY(!b.ownPicture().isEmpty()); // shown straight away
+    QVERIFY2(waitFor([&] { return !a.pictureOf(QStringLiteral("100002")).isEmpty(); }, 20000),
+             "A never received B's picture");
+    QImage received(QUrl(a.largePictureOf(QStringLiteral("100002"))).toLocalFile());
+    QCOMPARE(received.size(), QSize(96, 96));
+
+    b.removeOwnPicture();
+    QVERIFY(b.ownPicture().isEmpty());
+}
+
+void TestCore::profileDetails()
+{
+    AccountManager &a = *m_a;
+    AccountManager &b = *m_b;
+    QSignalSpy saved(&a, &AccountManager::profileSaved);
+    QVariantMap f;
+    f.insert(QStringLiteral("nickname"), QString::fromUtf8("Alïce"));
+    f.insert(QStringLiteral("firstName"), QStringLiteral("Alice"));
+    f.insert(QStringLiteral("lastName"), QStringLiteral("Tester"));
+    f.insert(QStringLiteral("city"), QStringLiteral("Gibraltar"));
+    f.insert(QStringLiteral("gender"), 1);
+    f.insert(QStringLiteral("about"), QStringLiteral("Testing ICQ Nina"));
+    QVERIFY(a.saveProfile(f));
+    QVERIFY(a.savingProfile());
+    QVERIFY(waitFor([&] { return saved.count() == 1; }, 15000));
+    QVERIFY2(saved.first().at(0).toBool(), qPrintable(saved.first().at(1).toString()));
+
+    QSignalSpy info(&b, &AccountManager::userInfoReceived);
+    b.requestUserInfo(QStringLiteral("100001"));
+    QVERIFY(waitFor([&] { return info.count() >= 1; }, 10000));
+    const QVariantMap got = info.last().at(1).toMap();
+    QCOMPARE(got.value(QStringLiteral("nickname")).toString(), QString::fromUtf8("Alïce"));
+    QCOMPARE(got.value(QStringLiteral("firstName")).toString(), QStringLiteral("Alice"));
+    QCOMPARE(got.value(QStringLiteral("city")).toString(), QStringLiteral("Gibraltar"));
+    QCOMPARE(got.value(QStringLiteral("gender")).toInt(), 1);
 }
 
 void TestCore::phase2SignOut()

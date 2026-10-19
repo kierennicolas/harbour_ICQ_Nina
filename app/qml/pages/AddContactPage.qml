@@ -13,7 +13,8 @@ Page {
     property string failureText
     property bool searched: false
     readonly property string digits: queryText.replace(/[^0-9]/g, "")
-    readonly property bool canSearch: account.state === 2 && (account.isIcq ? digits.length >= 5 : queryText.trim().length > 0)
+    readonly property bool validNumber: digits.length >= 5 && account.isValidUin(digits)
+    readonly property bool canSearch: account.state === 2 && (account.isIcq ? validNumber : queryText.trim().length > 0)
 
     function search() {
         if (!canSearch)
@@ -75,6 +76,16 @@ Page {
             }
 
             Label {
+                visible: account.isIcq && page.digits.length >= 5 && !page.validNumber
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                wrapMode: Text.Wrap
+                color: Theme.secondaryHighlightColor
+                font.pixelSize: Theme.fontSizeSmall
+                text: qsTr("ICQ numbers go up to 4294967295.")
+            }
+
+            Label {
                 visible: text.length > 0
                 text: page.failureText
                 x: Theme.horizontalPageMargin
@@ -86,7 +97,7 @@ Page {
 
             // A number can be added without finding it first.
             BackgroundItem {
-                visible: account.isIcq && page.digits.length >= 5 && !account.searching
+                visible: account.isIcq && page.validNumber && page.digits !== account.uin && !account.searching
                 width: parent.width
                 height: Theme.itemSizeSmall
                 onClicked: page.add(page.digits, "", false)
@@ -109,6 +120,7 @@ Page {
         delegate: ListItem {
             id: item
             contentHeight: Theme.itemSizeMedium
+            enabled: model.uin !== account.uin
             onClicked: page.add(model.uin, model.name, model.authRequired)
 
             PresenceDot {
@@ -142,6 +154,8 @@ Page {
                     color: item.highlighted ? Theme.secondaryHighlightColor : Theme.secondaryColor
                     text: {
                         var parts = [model.uin]
+                        if (model.uin === account.uin)
+                            parts.push(qsTr("you"))
                         parts.push(model.online ? qsTr("online") : qsTr("offline"))
                         if (model.authRequired)
                             parts.push(qsTr("asks to approve"))

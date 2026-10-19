@@ -14,6 +14,7 @@
 #include <QVariantMap>
 #include <QVector>
 
+#include "avatars.h"
 #include "contactmodel.h"
 #include "historystore.h"
 #include "searchmodel.h"
@@ -67,6 +68,11 @@ class AccountManager : public QObject
     // behind firewalls and on mobile data) instead of trying direct first.
     Q_PROPERTY(bool proxyTransfers READ proxyTransfers WRITE setProxyTransfers NOTIFY proxyTransfersChanged)
     Q_PROPERTY(QString fileProxyHost READ fileProxyHost NOTIFY accountChanged)
+    // Your own profile picture (round, file URL; empty if none) and the
+    // details the directory has about you.
+    Q_PROPERTY(QString ownPicture READ ownPicture NOTIFY ownInfoChanged)
+    Q_PROPERTY(QVariantMap ownProfile READ ownProfile NOTIFY ownInfoChanged)
+    Q_PROPERTY(bool savingProfile READ savingProfile NOTIFY savingProfileChanged)
     // New-message sound: 0 the phone's instant message tone, 1 the app's own
     // sound, 2 a sound file you chose (copied to customSoundFile).
     Q_PROPERTY(int messageSound READ messageSound WRITE setMessageSound NOTIFY soundChanged)
@@ -136,6 +142,9 @@ public:
     int privacyMode() const { return m_privacyMode; }
     int authorizationRequired() const { return m_authRequired; }
     QString nickname() const { return m_nickname; }
+    QString ownPicture() const;
+    QVariantMap ownProfile() const { return m_userInfo.value(normalized(m_uin)); }
+    bool savingProfile() const { return m_savingProfile; }
     SearchModel *searchResults() const { return m_search; }
     bool searching() const { return m_searching; }
     TransferManager *transfers() const { return m_transfers; }
@@ -203,7 +212,19 @@ public:
     Q_INVOKABLE void requestUserInfo(const QString &uin);
     Q_INVOKABLE QVariantMap userInfo(const QString &uin) const { return m_userInfo.value(normalized(uin)); }
     Q_INVOKABLE bool searchByUin(const QString &uin);
+    // 1 to 4294967295: what fits in OSCAR's 32-bit ICQ numbers.
+    Q_INVOKABLE static bool isValidUin(const QString &uin);
     Q_INVOKABLE void clearSearch();
+
+    // Profile pictures: round (lists) and square (details) file URLs.
+    Q_INVOKABLE QString pictureOf(const QString &uin) const;
+    Q_INVOKABLE QString largePictureOf(const QString &uin) const;
+    // Your own picture: cropped to a square and made small for the server.
+    Q_INVOKABLE bool setOwnPicture(const QString &pathOrUrl);
+    Q_INVOKABLE void removeOwnPicture();
+    // Your directory details. Keys: nickname, firstName, lastName, email,
+    // city, state, homepage, gender (0/1 female/2 male), birthday (date), about.
+    Q_INVOKABLE bool saveProfile(const QVariantMap &fields);
 
     // For TransferManager.
     bool isOnline() const { return m_state == Online && m_client; }
@@ -244,6 +265,9 @@ signals:
     void contactEditFailed(const QString &uin, const QString &message);
     void contactAddedYou(const QString &uin, const QString &name);
     void proxyTransfersChanged();
+    void pictureChanged(const QString &uin);
+    void savingProfileChanged();
+    void profileSaved(bool ok, const QString &message);
     void soundChanged();
 
 private slots:
@@ -273,6 +297,11 @@ private slots:
     void onSearchResult(const ICQSearchResult &result);
     void onSearchEnd(int usersLeft);
     void onIncomingFile(FileTransferHandler *handler);
+    void onIconServerConnected();
+    void onHaveIcon(const QString &contact, const QByteArray &data);
+    void onIconNeedsUploading();
+    void onOwnProfileSaved(bool ok);
+    void requestNextIcon();
     void onLivenessTimeout();
     void reconnect();
 
@@ -294,6 +323,8 @@ private:
     bool startSearch();
     void finishSearch();
     void applyFileSettings();
+    void handleIcon(const QString &contact, const QByteArray &hash, int type, int hashType);
+    void uploadOwnIcon();
 
     QString m_configDir;
     QString m_dataDir;
@@ -337,12 +368,22 @@ private:
     QString m_nickname;
     SearchModel *m_search = nullptr;
     bool m_searching = false;
+    QString m_searchUin;
     QTimer m_searchTimer;
     QHash<QString, QVariantMap> m_userInfo;
     struct PendingAdd { QString uin; QString group; QString reason; };
     QVector<PendingAdd> m_pendingAdds;          // waiting for their group to exist
     QHash<QString, QString> m_authReasons;      // added, will ask for authorization
     TransferManager *m_transfers = nullptr;
+    Avatars m_avatars;
+    struct WantedIcon { QString contact; QByteArray hash; int type = 1; int hashType = 1; bool requested = false; };
+    QHash<QString, WantedIcon> m_wantedIcons;   // by normalized contact
+    bool m_iconConnecting = false;
+    QTimer m_iconTimer;
+    QByteArray m_ownIconUpload;
+    bool m_uploadWhenConnected = false;
+    bool m_savingProfile = false;
+    QTimer m_profileTimer;
     bool m_proxyTransfers = true;
     int m_messageSound = 1;
     QString m_customSoundFile;
