@@ -78,5 +78,14 @@ if [ -n "${NINA_EXTRA:-}" ]; then
   run --host login.oscar.nina.chat --port 5190 --identity icq65 --multiconn 1 --wait 30 "${extra[@]}"
 fi
 
+# 6. The app's own core against NINA (profile saving end to end, like the
+#    profile page: "about" set to a marker, checked, then put back).
+CHECK="$(dirname "$PROBE")/../ninacheck/ninacheck"
+if [ -x "$CHECK" ]; then
+  sleep 60
+  echo "== ninacheck nina-tls"
+  timeout 150 "$CHECK" nina-tls 2>&1 | grep -E 'CHECK-' | grep -v XDG_RUNTIME_DIR
+fi
+
 echo "nina probe: plain=$first tls=$second ft_proxy=$proxy_rc"
 exit $first

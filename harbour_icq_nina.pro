@@ -14,9 +14,11 @@ sailfishapp_build|packagesExist(sailfishapp) {
 }
 
 !sailfishapp_build {
-    SUBDIRS += oscarprobe coretests
+    SUBDIRS += oscarprobe coretests ninacheck
     oscarprobe.subdir = tools/oscarprobe
     oscarprobe.depends = liboscar
+    ninacheck.subdir = tools/ninacheck
+    ninacheck.depends = liboscar
     # Desktop tests for the app core.
     coretests.subdir = tests/core
     coretests.depends = liboscar

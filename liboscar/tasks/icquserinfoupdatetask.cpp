@@ -19,6 +19,7 @@
 #include "icquserinfoupdatetask.h"
 
 #include <kdebug.h>
+#include <QStringList>
 
 #include "connection.h"
 #include "transfer.h"
@@ -95,6 +96,20 @@ void ICQUserInfoUpdateTask::onGo()
 	Buffer b;
 	for ( int i = 0; i < m_infoList.size(); ++i )
 		m_infoList.at(i)->store( &b );
+
+	// harbour_icq_nina: which fields go (types only, for diagnostics).
+	{
+		QStringList types;
+		const QByteArray raw = b.buffer();
+		for ( int pos = 0; pos + 4 <= raw.size(); )
+		{
+			const int type = ( (unsigned char)raw[pos] ) | ( (unsigned char)raw[pos + 1] << 8 );
+			const int len = ( (unsigned char)raw[pos + 2] ) | ( (unsigned char)raw[pos + 3] << 8 );
+			types << QString::number( type, 16 );
+			pos += 4 + len;
+		}
+		kDebug(OSCAR_RAW_DEBUG) << "own info update TLVs:" << qPrintable( types.join( QLatin1Char( ' ' ) ) );
+	}
 
 	if ( b.length() == 0 )
 	{
