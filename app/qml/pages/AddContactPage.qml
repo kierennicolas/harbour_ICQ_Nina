@@ -25,6 +25,15 @@ Page {
     }
 
     function add(uin, name, authRequired) {
+        failureText = ""
+        if (uin === account.uin) {
+            failureText = qsTr("That is your own number. You cannot add yourself.")
+            return
+        }
+        if (account.isContact(uin)) {
+            failureText = qsTr("%1 is already in your contact list.").arg(account.displayName(uin))
+            return
+        }
         pageStack.push(Qt.resolvedUrl("AddContactDialog.qml"),
                        { uin: uin, name: name || "", authRequired: authRequired || false })
     }
@@ -55,6 +64,7 @@ Page {
                 onTextChanged: {
                     page.queryText = text
                     page.searched = false
+                    page.failureText = ""
                 }
                 EnterKey.enabled: page.canSearch
                 EnterKey.iconSource: account.isIcq ? "image://theme/icon-m-search" : "image://theme/icon-m-enter-next"
@@ -111,6 +121,30 @@ Page {
                 }
             }
 
+            Label {
+                visible: account.isIcq && page.searched && !account.searching && list.count === 0
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                topPadding: Theme.paddingLarge
+                wrapMode: Text.Wrap
+                horizontalAlignment: Text.AlignHCenter
+                color: Theme.highlightColor
+                font.pixelSize: Theme.fontSizeLarge
+                text: qsTr("Nobody found")
+            }
+            Label {
+                visible: account.isIcq && page.searched && !account.searching && list.count === 0
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                wrapMode: Text.Wrap
+                horizontalAlignment: Text.AlignHCenter
+                color: Theme.secondaryHighlightColor
+                font.pixelSize: Theme.fontSizeSmall
+                text: page.validNumber && page.digits !== account.uin
+                      ? qsTr("The directory does not list %1. You can still add the number directly (above).").arg(page.digits)
+                      : qsTr("The directory does not list that number.")
+            }
+
             SectionHeader {
                 visible: list.count > 0
                 text: qsTr("Found")
@@ -119,8 +153,9 @@ Page {
 
         delegate: ListItem {
             id: item
+            readonly property bool isSelf: model.uin === account.uin
+            readonly property bool listed: account.isContact(model.uin)
             contentHeight: Theme.itemSizeMedium
-            enabled: model.uin !== account.uin
             onClicked: page.add(model.uin, model.name, model.authRequired)
 
             PresenceDot {
@@ -144,7 +179,8 @@ Page {
                 Label {
                     width: parent.width
                     truncationMode: TruncationMode.Fade
-                    color: item.highlighted ? Theme.highlightColor : Theme.primaryColor
+                    color: item.isSelf || item.listed ? Theme.secondaryColor
+                         : item.highlighted ? Theme.highlightColor : Theme.primaryColor
                     text: model.name
                 }
                 Label {
@@ -154,23 +190,17 @@ Page {
                     color: item.highlighted ? Theme.secondaryHighlightColor : Theme.secondaryColor
                     text: {
                         var parts = [model.uin]
-                        if (model.uin === account.uin)
-                            parts.push(qsTr("you"))
+                        if (item.isSelf)
+                            return parts.concat([qsTr("this is you")]).join(" · ")
                         parts.push(model.online ? qsTr("online") : qsTr("offline"))
-                        if (model.authRequired)
-                            parts.push(qsTr("asks to approve"))
-                        if (account.isContact(model.uin))
+                        if (item.listed)
                             parts.push(qsTr("already in your list"))
+                        else if (model.authRequired)
+                            parts.push(qsTr("asks to approve"))
                         return parts.join(" · ")
                     }
                 }
             }
-        }
-
-        ViewPlaceholder {
-            enabled: account.isIcq && page.searched && !account.searching && list.count === 0
-            text: qsTr("Nobody found")
-            hintText: qsTr("You can still add the number directly")
         }
 
         VerticalScrollDecorator {}
