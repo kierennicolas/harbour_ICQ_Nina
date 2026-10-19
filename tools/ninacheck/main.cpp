@@ -73,7 +73,7 @@ int main(int argc, char **argv)
         out(QStringLiteral("LOGIN failed: %1").arg(a.lastError()));
         return 1;
     }
-    out(QStringLiteral("LOGIN ok (%1)").arg(profile));
+    out(QStringLiteral("LOGIN ok (%1, tls=%2)").arg(profile).arg(a.tls() ? "yes" : "no"));
     QTest::qWait(6000); // own details arrive after the contact list
 
     QSignalSpy info(&a, &AccountManager::userInfoReceived);

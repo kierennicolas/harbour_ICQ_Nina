@@ -185,7 +185,7 @@ jobs:
   nina:
     name: Live sign-on probe against NINA
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     # One probe at a time: NINA rate-limits quick repeated sign-ons.
     concurrency:
       group: nina-probe

@@ -9,9 +9,12 @@ Dialog {
     allowedOrientations: Orientation.All
     canAccept: account.state === 2 && account.isIcq && !account.savingProfile
 
-    // Filled once from what the directory says (later answers do not
-    // overwrite your typing).
+    // Filled from what the directory says, and again when a newer answer
+    // arrives, until you change something (then your typing is kept).
     property bool loaded: false
+    property bool filling: false
+    property bool touched: false
+    function touch() { if (!filling) touched = true }
     // Tested against NINA (October 2026): it keeps nickname, names, city,
     // region and "about me", but not email, home page, gender or birthday.
     // After saving, the app also checks what the server kept.
@@ -20,8 +23,9 @@ Dialog {
     property string pickedPicture
 
     function fill(info) {
-        if (loaded || !info || Object.keys(info).length <= 1)
+        if (touched || !info || Object.keys(info).length <= 1)
             return
+        filling = true
         nickname.text = info.nickname || ""
         firstName.text = info.firstName || ""
         lastName.text = info.lastName || ""
@@ -33,6 +37,7 @@ Dialog {
         birthday = info.birthday ? new Date(info.birthday) : null
         about.text = info.about || ""
         loaded = true
+        filling = false
     }
 
     function choosePicture() {
@@ -166,6 +171,7 @@ Dialog {
             TextField {
                 id: nickname
                 width: parent.width
+                onTextChanged: dialog.touch()
                 label: qsTr("Nickname")
                 placeholderText: label
                 EnterKey.iconSource: "image://theme/icon-m-enter-next"
@@ -174,6 +180,7 @@ Dialog {
             TextField {
                 id: firstName
                 width: parent.width
+                onTextChanged: dialog.touch()
                 label: qsTr("First name")
                 placeholderText: label
                 EnterKey.iconSource: "image://theme/icon-m-enter-next"
@@ -182,6 +189,7 @@ Dialog {
             TextField {
                 id: lastName
                 width: parent.width
+                onTextChanged: dialog.touch()
                 label: qsTr("Last name")
                 placeholderText: label
                 EnterKey.iconSource: "image://theme/icon-m-enter-next"
@@ -190,6 +198,7 @@ Dialog {
             TextField {
                 id: email
                 width: parent.width
+                onTextChanged: dialog.touch()
                 label: qsTr("Email (shown to others)")
                 placeholderText: qsTr("Email")
                 inputMethodHints: Qt.ImhEmailCharactersOnly | Qt.ImhNoAutoUppercase
@@ -208,6 +217,7 @@ Dialog {
             TextField {
                 id: city
                 width: parent.width
+                onTextChanged: dialog.touch()
                 label: qsTr("City")
                 placeholderText: label
                 EnterKey.iconSource: "image://theme/icon-m-enter-next"
@@ -216,6 +226,7 @@ Dialog {
             TextField {
                 id: region
                 width: parent.width
+                onTextChanged: dialog.touch()
                 label: qsTr("State or region")
                 placeholderText: label
                 EnterKey.iconSource: "image://theme/icon-m-enter-next"
@@ -224,6 +235,7 @@ Dialog {
             TextField {
                 id: homepage
                 width: parent.width
+                onTextChanged: dialog.touch()
                 label: qsTr("Home page")
                 placeholderText: label
                 inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoAutoUppercase
@@ -234,6 +246,7 @@ Dialog {
             ComboBox {
                 id: gender
                 width: parent.width
+                onCurrentIndexChanged: dialog.touch()
                 label: qsTr("Gender")
                 menu: ContextMenu {
                     MenuItem { text: qsTr("Not said") }
@@ -248,14 +261,14 @@ Dialog {
                 onClicked: {
                     var d = pageStack.push("Sailfish.Silica.DatePickerDialog",
                                            { date: dialog.birthday ? dialog.birthday : new Date(1990, 0, 1) })
-                    d.accepted.connect(function() { dialog.birthday = d.date })
+                    d.accepted.connect(function() { dialog.birthday = d.date; dialog.touch() })
                 }
             }
             Button {
                 visible: dialog.birthday !== null
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: qsTr("Clear birthday")
-                onClicked: dialog.birthday = null
+                onClicked: { dialog.birthday = null; dialog.touch() }
             }
             Label {
                 visible: dialog.onNina
@@ -270,6 +283,7 @@ Dialog {
             TextArea {
                 id: about
                 width: parent.width
+                onTextChanged: dialog.touch()
                 label: qsTr("About me")
                 placeholderText: label
             }

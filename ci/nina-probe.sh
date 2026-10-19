@@ -32,7 +32,7 @@ first=$?
 sleep 60
 
 # 2. The same over SSL/TLS.
-run --host slogin.oscar.nina.chat --port 5190 --tls --identity icq65 --multiconn 1 --wait 30
+run --host slogin.oscar.nina.chat --port 5190 --tls --identity icq65 --multiconn 1 --wait 40 --profile-test
 second=$?
 
 # 3. Contact list editing: add our own number to our list and remove it
@@ -82,9 +82,11 @@ fi
 #    profile page: "about" set to a marker, checked, then put back).
 CHECK="$(dirname "$PROBE")/../ninacheck/ninacheck"
 if [ -x "$CHECK" ]; then
-  sleep 60
-  echo "== ninacheck nina-tls"
-  timeout 150 "$CHECK" nina-tls 2>&1 | grep -E 'CHECK-' | grep -v XDG_RUNTIME_DIR
+  for profile in nina nina-tls; do
+    sleep 60
+    echo "== ninacheck $profile"
+    timeout 150 "$CHECK" "$profile" 2>&1 | grep -E 'CHECK-' | grep -v XDG_RUNTIME_DIR
+  done
 fi
 
 echo "nina probe: plain=$first tls=$second ft_proxy=$proxy_rc"
